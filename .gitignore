@@ -1,0 +1,27 @@
+# Python virtual environment
+.venv/
+
+# API keys and secrets
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Temporary files
+temp/
+
+# Local database
+data/*.db
+
+# Google authentication
+credentials.json
+token.json
+
+# IDE
+.vscode/
+.idea/
+
+# Operating system
+.DS_Store
+Thumbs.db

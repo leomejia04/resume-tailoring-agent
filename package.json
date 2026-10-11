@@ -1,0 +1,11 @@
+{
+  "name": "resume-tailoring-tools",
+  "private": true,
+  "description": "Repository-level developer tools (Supabase CLI for the local stack).",
+  "scripts": {
+    "supabase": "supabase"
+  },
+  "devDependencies": {
+    "supabase": "2.119.0"
+  }
+}

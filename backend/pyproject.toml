@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = ["integration: needs the local Supabase stack (npx supabase start) and .env"]
 
 [tool.ruff]
 line-length = 100
@@ -14,7 +15,11 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's documented dependency-injection idiom.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Query"]
+
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101"]
+"tests/*" = ["S101", "S105", "S106"]
 # subprocess is invoked with a fixed argument list and no shell.
 "app/documents/convert.py" = ["S603"]

@@ -17,3 +17,11 @@ backend/out/
 # Node
 node_modules/
 dist/
+
+# Personal Claude Code settings
+.claude/settings.local.json
+
+# Local Supabase: JWT signing private key and CLI state
+supabase/signing_keys.json
+supabase/.temp/
+supabase/.branches/

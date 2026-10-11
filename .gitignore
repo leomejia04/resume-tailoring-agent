@@ -1,27 +1,19 @@
-# Python virtual environment
-.venv/
-
-# API keys and secrets
+# Secrets
 .env
+.env.*
+!.env.example
 
-# Python cache
+# Python
 __pycache__/
 *.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
 
-# Temporary files
-temp/
+# Generated documents (may contain resume content)
+backend/out/
+*.tmp
 
-# Local database
-data/*.db
-
-# Google authentication
-credentials.json
-token.json
-
-# IDE
-.vscode/
-.idea/
-
-# Operating system
-.DS_Store
-Thumbs.db
+# Node
+node_modules/
+dist/

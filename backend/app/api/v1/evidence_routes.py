@@ -29,6 +29,7 @@ def _out(record: EvidenceRecord, version: EvidenceVersion) -> EvidenceOut:
     return EvidenceOut(
         id=record.id,
         master_version_id=record.master_version_id,
+        origin=record.origin,  # type: ignore[arg-type]
         position=record.position,
         version=version.version,
         text=version.text,
@@ -149,7 +150,11 @@ def add_evidence_version(
             suggested_type=current.suggested_type,
             verification_status=body.verification_status,
             # Provenance: wording differs from the master means the user wrote it.
-            change_source="extracted" if text == current.source_text else "user",
+            change_source=(
+                current.change_source
+                if text == current.source_text and current.change_source != "user"
+                else "user"
+            ),
         )
         db.add(version)
         db.flush()

@@ -14,7 +14,8 @@ VerificationStatus = Literal["unverified", "verified", "rejected"]
 
 class EvidenceOut(BaseModel):
     id: uuid.UUID
-    master_version_id: uuid.UUID
+    master_version_id: uuid.UUID | None
+    origin: Literal["master", "confirmation"]
     position: int
     version: int
     text: str
@@ -26,7 +27,7 @@ class EvidenceOut(BaseModel):
     experience_type: ExperienceType
     suggested_type: ExperienceType
     verification_status: VerificationStatus
-    change_source: Literal["extracted", "user"]
+    change_source: Literal["extracted", "user", "confirmation"]
     updated_at: datetime
 
 

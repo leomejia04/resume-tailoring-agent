@@ -21,6 +21,7 @@ const SECTION_LABELS: Record<string, string> = {
   certifications: 'Certifications',
   leadership: 'Leadership and activities',
   awards: 'Awards',
+  added: 'Added from your answers to job questions',
 }
 const STATUS_STYLES = {
   unverified: { label: 'Needs review', className: 'bg-amber-100 text-amber-900' },
@@ -218,8 +219,8 @@ export function ExperiencePage() {
   }, [])
 
   const loadItems = useCallback((masterId: string, signal?: AbortSignal) => {
-    listEvidence(masterId, signal)
-      .then(setItems)
+    listEvidence(undefined, signal)
+      .then((all) => setItems(all.filter((i) => i.master_version_id === masterId || i.origin === 'confirmation')))
       .catch((error) => {
         if (!signal?.aborted) setLoadError(messageOf(error))
       })
@@ -237,7 +238,7 @@ export function ExperiencePage() {
 
   const sections: [string, EvidenceItem[]][] = []
   for (const item of items ?? []) {
-    const key = item.section ?? 'other'
+    const key = item.origin === 'confirmation' ? 'added' : (item.section ?? 'other')
     const group = sections.find(([name]) => name === key)
     if (group) group[1].push(item)
     else sections.push([key, [item]])

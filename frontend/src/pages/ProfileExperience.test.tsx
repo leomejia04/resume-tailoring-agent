@@ -24,6 +24,7 @@ function evidence(overrides: Partial<EvidenceItem>): EvidenceItem {
   return {
     id: 'e1',
     master_version_id: 'm1',
+    origin: 'master',
     position: 0,
     version: 1,
     text: 'Built Python and SQL scripts that reconciled weekly sales extracts.',
@@ -147,7 +148,7 @@ describe('ExperiencePage', () => {
     renderPage(<ExperiencePage />)
     await userEvent.setup().click(await screen.findByRole('button', { name: 'Reject' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('changed in another tab')
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).includes('/evidence?')).length).toBe(2)
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/api/v1/evidence')).length).toBe(2)
   })
 
   it('points new users to the upload step', async () => {

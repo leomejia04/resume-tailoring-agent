@@ -23,7 +23,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or get_settings()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     # Outbound request logs include full URLs (query strings); keep them off by default.
-    logging.getLogger("httpx").setLevel(logging.WARNING)
+    for name in ("httpx", "httpx2", "openai"):
+        logging.getLogger(name).setLevel(logging.WARNING)
     show_docs = settings.app_env != "production"
     app = FastAPI(
         title="Resume Tailoring API",

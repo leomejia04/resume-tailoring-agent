@@ -1,6 +1,16 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
-import { ApiError, previewJobInput } from '../api/client'
-import { JOB_LIMITS, type JobInputPreview, type JobInputRequest, type SectionKind } from '../api/types'
+import { useNavigate } from 'react-router'
+import { ApiError, createJob, getAIStatus, previewJobInput, startRun } from '../api/client'
+import { messageOf } from '../api/errors'
+import {
+  JOB_LIMITS,
+  type AIStatus,
+  type JobInputPreview,
+  type JobInputRequest,
+  type SectionKind,
+} from '../api/types'
+import { AIBadge } from '../components/AIBadge'
+import { Alert } from '../components/Alert'
 
 type FieldName = 'title' | 'company' | 'source_url' | 'description'
 type FieldErrors = Partial<Record<FieldName, string>>
@@ -74,6 +84,33 @@ export function JobInputPage() {
   const errorSummaryRef = useRef<HTMLDivElement>(null)
   const resultHeadingRef = useRef<HTMLHeadingElement>(null)
   const requestRef = useRef<AbortController | null>(null)
+  const navigate = useNavigate()
+  const [ai, setAI] = useState<AIStatus | null>(null)
+  const [tailoring, setTailoring] = useState(false)
+  const [tailorError, setTailorError] = useState<{ message: string; requestId: string | null } | null>(null)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getAIStatus(controller.signal)
+      .then(setAI)
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [])
+
+  async function startTailoring() {
+    if (tailoring) return
+    setTailoring(true)
+    setTailorError(null)
+    try {
+      const job = await createJob(toRequest(values))
+      const run = await startRun(job.id)
+      navigate(`/runs/${run.id}`)
+    } catch (error) {
+      setTailorError(messageOf(error))
+    } finally {
+      setTailoring(false)
+    }
+  }
 
   useEffect(() => () => requestRef.current?.abort(), [])
 
@@ -253,7 +290,9 @@ export function JobInputPage() {
           <h2 id={`${formId}-result`} ref={resultHeadingRef} tabIndex={-1} className="text-xl font-semibold focus:outline-none">
             What we found
           </h2>
-          <p className="mt-1 text-sm text-slate-600">This check is not saved. Saving postings comes with accounts.</p>
+          <p className="mt-1 text-sm text-slate-600">
+            This check is not saved. Save the posting to tailor your resume to it.
+          </p>
           <dl className="mt-4 grid grid-cols-2 gap-4 sm:max-w-sm">
             <div>
               <dt className="text-sm text-slate-500">Words</dt>
@@ -287,6 +326,23 @@ export function JobInputPage() {
               </ul>
             </>
           )}
+          <div className="mt-6 space-y-3 border-t border-slate-200 pt-4">
+            <AIBadge status={ai} />
+            {tailorError && (
+              <Alert tone="error" requestId={tailorError.requestId}>
+                {tailorError.message}
+              </Alert>
+            )}
+            <button
+              type="button"
+              onClick={startTailoring}
+              aria-disabled={tailoring || ai?.provider === 'disabled'}
+              disabled={ai?.provider === 'disabled'}
+              className="rounded-md bg-indigo-700 px-4 py-2 font-medium text-white aria-disabled:opacity-60"
+            >
+              {tailoring ? 'Reading the posting… this can take a minute' : 'Save and start tailoring'}
+            </button>
+          </div>
         </section>
       )}
     </div>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Literal
@@ -64,6 +65,26 @@ class Settings(BaseSettings):
     cookie_secure: bool | None = None
     refresh_cookie_max_age: int = Field(default=7 * 24 * 3600, ge=3600, le=30 * 24 * 3600)
 
+    # --- Generative AI (server-side only). Unset provider: "openai" when a key
+    # exists, otherwise AI features are disabled. "demo" is a transparent,
+    # deterministic stand-in for local development and tests, never production.
+    llm_provider: Literal["openai", "demo"] | None = None
+    openai_api_key: SecretStr | None = None
+    openai_model: str = Field(default="gpt-5.6-luna", min_length=1, max_length=100)
+    openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "low"
+    openai_timeout_seconds: float = Field(default=90, ge=5, le=300)
+    openai_max_retries: int = Field(default=2, ge=0, le=5)
+    # USD per 1M tokens, from the model's official pricing page (verify before changing).
+    price_input_per_mtok: Decimal = Decimal("0.20")
+    price_cached_input_per_mtok: Decimal = Decimal("0.02")
+    price_output_per_mtok: Decimal = Decimal("1.20")
+    price_cache_write_multiplier: Decimal = Decimal("1.25")
+    user_daily_budget_usd: Decimal = Field(default=Decimal("0.50"), ge=0, le=100)
+    app_daily_budget_usd: Decimal = Field(default=Decimal("5.00"), ge=0, le=10_000)
+    analysis_max_output_tokens: int = Field(default=6000, ge=500, le=64_000)
+    draft_max_output_tokens: int = Field(default=10_000, ge=500, le=64_000)
+    max_context_chars: int = Field(default=60_000, ge=5_000, le=400_000)
+
     @field_validator("cors_allowed_origins", "trusted_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
@@ -96,7 +117,17 @@ class Settings(BaseSettings):
                 raise ValueError("production requires Secure cookies")
             if not _is_public_https(self.supabase_url):
                 raise ValueError("production SUPABASE_URL must be HTTPS")
+            if self.llm_provider == "demo":
+                raise ValueError("the demo AI provider is not allowed in production")
+        if self.llm_provider == "openai" and self.openai_api_key is None:
+            raise ValueError("LLM_PROVIDER=openai requires OPENAI_API_KEY")
         return self
+
+    @property
+    def effective_llm_provider(self) -> str:
+        if self.llm_provider:
+            return self.llm_provider
+        return "openai" if self.openai_api_key is not None else "disabled"
 
     @property
     def secure_cookies(self) -> bool:

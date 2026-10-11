@@ -117,7 +117,8 @@ export type VerificationStatus = 'unverified' | 'verified' | 'rejected'
 
 export interface EvidenceItem {
   id: string
-  master_version_id: string
+  master_version_id: string | null
+  origin: 'master' | 'confirmation'
   position: number
   version: number
   text: string
@@ -129,7 +130,7 @@ export interface EvidenceItem {
   experience_type: ExperienceType
   suggested_type: ExperienceType
   verification_status: VerificationStatus
-  change_source: 'extracted' | 'user'
+  change_source: 'extracted' | 'user' | 'confirmation'
   updated_at: string
 }
 
@@ -148,3 +149,139 @@ export const ACCOUNT_LIMITS = {
   displayNameMax: 100,
   evidenceTextMax: 2000,
 } as const
+
+// --- Jobs, tailoring runs, drafts (mirrors backend/app/schemas/tailoring.py) ---
+
+export interface JobOut {
+  id: string
+  title: string | null
+  company: string | null
+  source_url: string | null
+  version: number
+  created_at: string
+}
+
+export type RequirementCategory = 'required' | 'preferred' | 'responsibility' | 'terminology'
+
+export interface Requirement {
+  id: string
+  category: RequirementCategory
+  text: string
+  terms: string[]
+  mandatory: boolean
+}
+
+export interface AnalysisContent {
+  role_title: string
+  seniority: string | null
+  requirements: Requirement[]
+}
+
+export interface Question {
+  id: string
+  requirement_id: string
+  requirement_text: string
+  term: string
+  question: string
+  status: 'open' | 'confirmed' | 'declined' | 'dismissed'
+  evidence_id: string | null
+}
+
+export interface QuestionAnswer {
+  answer: 'yes' | 'no' | 'skip'
+  experience_type?: Exclude<ExperienceType, 'unclassified'>
+  entry_evidence_id?: string
+  description?: string
+}
+
+export interface DraftBullet {
+  text: string
+  evidence_ids: string[]
+  requirement_ids: string[]
+}
+
+export interface DraftEntry {
+  ref: string
+  section: string | null
+  entry: string | null
+  date_text: string | null
+  experience_type: string
+  bullets: DraftBullet[]
+}
+
+export interface DraftContent {
+  headline: string
+  summary: string | null
+  entries: DraftEntry[]
+  skills: { text: string; evidence_ids: string[] }[]
+  omitted: { evidence_id: string; reason: 'not_selected' | 'failed_validation' }[]
+}
+
+export interface ValidationIssue {
+  code: string
+  severity: 'error' | 'warning'
+  where: string
+  message: string
+}
+
+export interface ValidationReport {
+  rule_version: string
+  issues: ValidationIssue[]
+  removed: string[]
+  repaired: boolean
+  passed: boolean
+}
+
+export interface DraftOut {
+  version: number
+  content: DraftContent
+  validation: ValidationReport
+  created_by: string
+  model: string | null
+  prompt_version: string | null
+  created_at: string
+  sources: Record<string, { text: string; entry: string | null; experience_type: string }>
+}
+
+export type RunStatus =
+  | 'analyzing'
+  | 'awaiting_confirmation'
+  | 'ready'
+  | 'drafting'
+  | 'validating'
+  | 'awaiting_review'
+  | 'failed'
+  | 'cancelled'
+
+export interface RunOut {
+  id: string
+  status: RunStatus
+  error_code: string | null
+  lock_version: number
+  job: JobOut
+  master_version_id: string | null
+  analysis: AnalysisContent | null
+  analysis_model: string | null
+  questions: Question[]
+  draft: DraftOut | null
+  usage: { calls: number; cost_usd: string; input_tokens: number; output_tokens: number }
+  created_at: string
+  updated_at: string
+}
+
+export interface RunSummary {
+  id: string
+  status: RunStatus
+  job_title: string | null
+  company: string | null
+  created_at: string
+}
+
+export interface AIStatus {
+  provider: 'openai' | 'demo' | 'disabled'
+  model: string | null
+  reasoning_effort: string | null
+  disclosure: string
+  user_daily_budget_usd: string
+  spent_today_usd: string
+}

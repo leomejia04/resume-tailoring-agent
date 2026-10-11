@@ -12,6 +12,7 @@ import { JobInputPage } from './pages/JobInputPage'
 import { NotFoundPage } from './pages/NotFoundPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { RunPage } from './pages/RunPage'
 
 export default function App() {
   return (
@@ -27,6 +28,7 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="jobs/new" element={<JobInputPage />} />
           <Route path="experience" element={<ExperiencePage />} />
+          <Route path="runs/:runId" element={<RunPage />} />
           <Route path="profile" element={<ProfilePage />} />
           <Route
             path="tracker"

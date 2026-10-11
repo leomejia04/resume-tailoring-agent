@@ -10,20 +10,24 @@ grants for the runtime role at all.
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import (
     CheckConstraint,
     Column,
+    Date,
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
     Index,
     Integer,
     MetaData,
+    Numeric,
     String,
     Table,
+    Text,
     UniqueConstraint,
     func,
     text,
@@ -35,6 +39,20 @@ SCHEMA = "app"
 
 EXPERIENCE_TYPES = ("professional", "internship", "academic", "personal", "other", "unclassified")
 VERIFICATION_STATUSES = ("unverified", "verified", "rejected")
+EVIDENCE_ORIGINS = ("master", "confirmation")
+CHANGE_SOURCES = ("extracted", "user", "confirmation")
+RUN_STATUSES = (
+    "analyzing",
+    "awaiting_confirmation",
+    "ready",
+    "drafting",
+    "validating",
+    "awaiting_review",
+    "failed",
+    "cancelled",
+)
+QUESTION_STATUSES = ("open", "confirmed", "declined", "dismissed")
+DRAFT_SOURCES = ("generation", "repair", "edit", "chat")
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -133,12 +151,18 @@ class EvidenceRecord(Base):
             name="fk_evidence_records_master_owner",
         ),
         CheckConstraint("current_version > 0", name="current_version_positive"),
+        CheckConstraint(_in("origin", EVIDENCE_ORIGINS), name="origin"),
+        # Extracted facts come from a master; facts added by answering questions do not.
+        CheckConstraint(
+            "(origin = 'master') = (master_version_id IS NOT NULL)", name="origin_matches_master"
+        ),
         Index("ix_evidence_records_owner_master", "owner_id", "master_version_id"),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
-    master_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    master_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    origin: Mapped[str] = mapped_column(String(16), nullable=False, server_default="master")
     position: Mapped[int] = mapped_column(Integer, nullable=False)
     current_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     created_at: Mapped[datetime] = _created_at()
@@ -158,7 +182,7 @@ class EvidenceVersion(Base):
         CheckConstraint(
             _in("verification_status", VERIFICATION_STATUSES), name="verification_status"
         ),
-        CheckConstraint(_in("change_source", ("extracted", "user")), name="change_source"),
+        CheckConstraint(_in("change_source", CHANGE_SOURCES), name="change_source"),
         CheckConstraint(
             "verification_status <> 'verified' OR experience_type <> 'unclassified'",
             name="verified_needs_type",
@@ -197,3 +221,229 @@ class RateLimitCounter(Base):
 
 def json_list(value: Any) -> list[str]:
     return [str(v) for v in value] if isinstance(value, list) else []
+
+
+# --- Milestone 4: jobs, analyses, runs, confirmations, drafts, usage -----------
+
+
+def _owner_fk(columns: list[str], target: str, name: str) -> ForeignKeyConstraint:
+    """Composite (id, owner_id) foreign key: a child can only reference its owner's rows."""
+    return ForeignKeyConstraint(columns, [f"app.{target}.id", f"app.{target}.owner_id"], name=name)
+
+
+class JobPosting(Base):
+    __tablename__ = "job_postings"
+    __table_args__ = (UniqueConstraint("id", "owner_id", name="uq_job_postings_id_owner"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), _auth_user_fk(), nullable=False, index=True
+    )
+    title: Mapped[str | None] = mapped_column(String(200))
+    company: Mapped[str | None] = mapped_column(String(200))
+    source_url: Mapped[str | None] = mapped_column(String(2048))
+    current_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    created_at: Mapped[datetime] = _created_at()
+
+
+class JobPostingVersion(Base):
+    __tablename__ = "job_posting_versions"
+    __table_args__ = (
+        UniqueConstraint("id", "owner_id", name="uq_job_posting_versions_id_owner"),
+        UniqueConstraint("posting_id", "version", name="uq_job_posting_versions_posting_version"),
+        _owner_fk(
+            ["posting_id", "owner_id"], "job_postings", "fk_job_posting_versions_posting_owner"
+        ),
+        CheckConstraint("version > 0", name="version_positive"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    posting_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    description_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class JobAnalysis(Base):
+    """Structured requirements for one posting version; cached per model and prompt version."""
+
+    __tablename__ = "job_analyses"
+    __table_args__ = (
+        UniqueConstraint("id", "owner_id", name="uq_job_analyses_id_owner"),
+        UniqueConstraint(
+            "posting_version_id",
+            "model",
+            "prompt_version",
+            name="uq_job_analyses_version_model_prompt",
+        ),
+        _owner_fk(
+            ["posting_version_id", "owner_id"],
+            "job_posting_versions",
+            "fk_job_analyses_version_owner",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    posting_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    content: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class TailoringRun(Base):
+    __tablename__ = "tailoring_runs"
+    __table_args__ = (
+        UniqueConstraint("id", "owner_id", name="uq_tailoring_runs_id_owner"),
+        _owner_fk(
+            ["posting_version_id", "owner_id"],
+            "job_posting_versions",
+            "fk_tailoring_runs_version_owner",
+        ),
+        _owner_fk(
+            ["master_version_id", "owner_id"], "master_versions", "fk_tailoring_runs_master_owner"
+        ),
+        _owner_fk(["analysis_id", "owner_id"], "job_analyses", "fk_tailoring_runs_analysis_owner"),
+        CheckConstraint(_in("status", RUN_STATUSES), name="status"),
+        Index("ix_tailoring_runs_owner_created", "owner_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    posting_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    master_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    analysis_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    lock_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _created_at()
+
+
+class ConfirmationQuestion(Base):
+    """A precise question about a requirement the user's confirmed facts do not cover."""
+
+    __tablename__ = "confirmation_questions"
+    __table_args__ = (
+        UniqueConstraint("id", "owner_id", name="uq_confirmation_questions_id_owner"),
+        UniqueConstraint(
+            "run_id", "requirement_id", name="uq_confirmation_questions_run_requirement"
+        ),
+        _owner_fk(["run_id", "owner_id"], "tailoring_runs", "fk_confirmation_questions_run_owner"),
+        _owner_fk(
+            ["evidence_id", "owner_id"],
+            "evidence_records",
+            "fk_confirmation_questions_evidence_owner",
+        ),
+        CheckConstraint(_in("status", QUESTION_STATUSES), name="status"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    requirement_id: Mapped[str] = mapped_column(String(16), nullable=False)
+    requirement_text: Mapped[str] = mapped_column(String(500), nullable=False)
+    term: Mapped[str] = mapped_column(String(100), nullable=False)
+    question: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="open")
+    evidence_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    created_at: Mapped[datetime] = _created_at()
+    answered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class Draft(Base):
+    __tablename__ = "drafts"
+    __table_args__ = (
+        UniqueConstraint("id", "owner_id", name="uq_drafts_id_owner"),
+        UniqueConstraint("run_id", name="uq_drafts_run_id"),
+        _owner_fk(["run_id", "owner_id"], "tailoring_runs", "fk_drafts_run_owner"),
+        CheckConstraint("current_version > 0", name="current_version_positive"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    current_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    created_at: Mapped[datetime] = _created_at()
+
+
+class DraftVersion(Base):
+    """An immutable resume draft plus the validation report computed for it."""
+
+    __tablename__ = "draft_versions"
+    __table_args__ = (
+        UniqueConstraint("draft_id", "version", name="uq_draft_versions_draft_version"),
+        _owner_fk(["draft_id", "owner_id"], "drafts", "fk_draft_versions_draft_owner"),
+        CheckConstraint(_in("created_by", DRAFT_SOURCES), name="created_by"),
+        CheckConstraint("version > 0", name="version_positive"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    draft_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    validation: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(16), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(100))
+    prompt_version: Mapped[str | None] = mapped_column(String(50))
+    created_at: Mapped[datetime] = _created_at()
+
+
+class UsageEvent(Base):
+    """One paid model call: tokens, computed cost, latency, and outcome."""
+
+    __tablename__ = "usage_events"
+    __table_args__ = (
+        _owner_fk(["run_id", "owner_id"], "tailoring_runs", "fk_usage_events_run_owner"),
+        CheckConstraint("cost_usd >= 0", name="cost_nonnegative"),
+        Index("ix_usage_events_owner_created", "owner_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    run_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    cached_input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    cache_write_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    reasoning_tokens: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    cost_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False, server_default="0")
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class SpendUser(Base):
+    """Per-user daily spend: reserved (in-flight worst case) and settled actual cost."""
+
+    __tablename__ = "spend_user"
+    __table_args__ = (CheckConstraint("reserved_usd >= 0 AND spent_usd >= 0", name="nonnegative"),)
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), _auth_user_fk(), primary_key=True
+    )
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    reserved_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, server_default="0"
+    )
+    spent_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False, server_default="0")
+
+
+class SpendGlobal(Base):
+    """Application-wide daily spend for the spending cutoff (aggregate numbers only)."""
+
+    __tablename__ = "spend_global"
+    __table_args__ = (CheckConstraint("reserved_usd >= 0 AND spent_usd >= 0", name="nonnegative"),)
+
+    day: Mapped[date] = mapped_column(Date, primary_key=True)
+    reserved_usd: Mapped[Decimal] = mapped_column(
+        Numeric(12, 6), nullable=False, server_default="0"
+    )
+    spent_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False, server_default="0")

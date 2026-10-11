@@ -3,7 +3,7 @@
 A hosted, multi-user application for creating truthful, tailored, one-page PDF
 resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md).
 
-**Current state:** milestones 1-3 are complete.
+**Current state:** milestones 1-3 are complete; milestone 4 (AI tailoring baseline) is built and tested with a demo provider and mocked model, pending a live OpenAI run.
 
 - Document proof: a fictional master DOCX is edited in a copy with formatting
   preserved, rendered to PDF in a sandboxed LibreOffice container, and inspected.
@@ -14,10 +14,16 @@ resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md
   versioned master uploads in private storage, and an experience bank of
   extracted facts to confirm, edit, or reject. Two-user isolation is proven at
   the API, database (row-level security), and storage layers.
+- AI tailoring baseline: saved job postings, cached job analysis, precise
+  questions about missing skills, and grounded drafts in which every bullet
+  cites confirmed facts. Deterministic checks remove unsupported numbers,
+  tools, dates, and titles; costs are recorded and capped per user and per day.
 
 ## Repository layout
 
 ```
+backend/app/ai/           model clients (OpenAI, demo), prompts, pricing, budgets
+backend/app/tailoring/    job analysis, gaps/questions, drafting workflow, validation
 backend/app/api/          FastAPI routes (/api/v1), error envelope, middleware
 backend/app/auth/         session cookies, JWT verification, CSRF, rate limits
 backend/app/db/           SQLAlchemy models and per-user sessions
@@ -134,7 +140,10 @@ npm run dev
 ```
 
 Open http://127.0.0.1:5173, create an account, upload a master resume on the
-Profile page, and review its facts on the Experience page. The page header
+Profile page, and review its facts on the Experience page. To try tailoring
+without an OpenAI key, add `LLM_PROVIDER=demo` to `.env` (deterministic rules,
+clearly labeled as not AI); with `OPENAI_API_KEY` set, the configured OpenAI
+model is used instead. The page header
 shows "Server connected" when the frontend can reach the API. Vite forwards `/api` requests to
 `http://127.0.0.1:8000`, so the browser uses a single origin and no CORS
 configuration is needed. API docs (development only): http://127.0.0.1:8000/api/docs
@@ -216,6 +225,12 @@ Environment variables (see [.env.example](.env.example)):
 | `TRUSTED_ORIGINS` | Vite dev origins | Origins allowed to send state-changing requests; required in production |
 | `COOKIE_SECURE` | auto | Secure cookies in production, plain on localhost |
 | `MAX_UPLOAD_BYTES` | `5242880` | Maximum master upload size |
+| `LLM_PROVIDER` | auto | Empty: OpenAI if a key is set, else AI off; `demo` for local testing (not allowed in production) |
+| `OPENAI_API_KEY` | (unset) | Server-side OpenAI key |
+| `OPENAI_MODEL` | `gpt-5.6-luna` | Verified on OpenAI's model page (2026-10-11) |
+| `OPENAI_REASONING_EFFORT` | `low` | Benchmark starting point |
+| `USER_DAILY_BUDGET_USD` / `APP_DAILY_BUDGET_USD` | `0.50` / `5.00` | Atomic spending limits checked before every model call |
+| `PRICE_*_PER_MTOK` | official rates | Used for cost accounting |
 
 ## Updating dependencies
 

@@ -36,6 +36,9 @@ REFRESH_IP = Limit("refresh-ip", 120, 900)
 RESET_IP = Limit("reset-ip", 10, 3600)
 RESET_EMAIL = Limit("reset-email", 3, 3600)
 UPLOAD_USER = Limit("upload-user", 20, 3600)
+# Paid model calls (also bounded by the daily spending limits).
+AI_RUN_USER = Limit("ai-run-user", 20, 3600)
+AI_DRAFT_USER = Limit("ai-draft-user", 30, 3600)
 
 
 class RateLimitedError(Exception):

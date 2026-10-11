@@ -106,3 +106,27 @@ Short notes on concepts introduced while building, in plain language.
 - **Testing what the browser does.** jsdom kept focus on a disabled button;
   a real browser dropped it. Checking the real page found an accessibility
   bug the unit tests could not.
+
+## Milestone 4: structured AI baseline
+
+- **Verify before integrating.** We checked the model's official page for its
+  exact ID, Structured Outputs support, reasoning settings, and prices instead
+  of trusting memory or search snippets (which disagreed on price).
+- **Structured outputs.** The model must answer in a JSON shape defined by a
+  Pydantic class. That guarantees the shape, not the truth, so every result is
+  validated again by our code.
+- **Grounding with citations.** Facts get short aliases (E1, E2). Each bullet
+  must cite them, and Python checks that cited facts are real, confirmed, from
+  the same job, and actually contain every number, year, and tool the bullet
+  mentions. The model can phrase; it cannot invent.
+- **Prompt injection.** Text inside a job posting can try to give the model
+  orders. We cannot fully prevent a model from obeying, so we make obeying
+  useless: unsupported claims are removed by deterministic checks.
+- **Short transactions around slow calls.** Never keep a database transaction
+  open while waiting on a network call; record intent, commit, call, then
+  record the result.
+- **Atomic budgets.** "Check then spend" can overspend under concurrency.
+  A single conditional UPDATE (`spent + reserved + cost <= cap`) reserves money
+  safely because the row lock makes concurrent requests take turns.
+- **Decimals for money.** Floating point cannot represent 0.1 exactly; costs
+  use Python `Decimal` and PostgreSQL `numeric`.

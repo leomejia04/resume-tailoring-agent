@@ -1,7 +1,8 @@
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, expect, it } from 'vitest'
-import { jsonResponse, mockFetch } from '../test/http'
+import { errorResponse, jsonResponse, routeFetch } from '../test/http'
 import { JobInputPage } from './JobInputPage'
 
 const POSTING = 'Requirements:\n- SQL and Excel\nResponsibilities:\n- Build weekly reports for the team'
@@ -20,9 +21,35 @@ const PREVIEW = {
   saved: false,
 }
 
+const AI_DEMO = {
+  provider: 'demo',
+  model: 'demo-deterministic-v1',
+  reasoning_effort: null,
+  disclosure: 'We send the posting and confirmed facts to OpenAI.',
+  user_daily_budget_usd: '0.50',
+  spent_today_usd: '0',
+}
+
+type Routes = Parameters<typeof routeFetch>[0]
+
+function setup(routes: Routes = {}) {
+  return routeFetch({ 'GET /ai/status': () => jsonResponse(200, AI_DEMO), ...routes })
+}
+
+function renderPage() {
+  return render(
+    <MemoryRouter initialEntries={['/jobs/new']}>
+      <Routes>
+        <Route path="/jobs/new" element={<JobInputPage />} />
+        <Route path="/runs/:runId" element={<h1>Run page</h1>} />
+      </Routes>
+    </MemoryRouter>,
+  )
+}
+
 async function renderWithDescription(text = POSTING) {
   const user = userEvent.setup()
-  render(<JobInputPage />)
+  renderPage()
   await user.click(screen.getByLabelText('Job description'))
   await user.paste(text)
   return user
@@ -30,18 +57,19 @@ async function renderWithDescription(text = POSTING) {
 
 describe('JobInputPage', () => {
   it('labels every field', () => {
-    render(<JobInputPage />)
+    setup()
+    renderPage()
     for (const label of [/Job title/, /Company/, /Link to posting/, 'Job description']) {
       expect(screen.getByLabelText(label)).toBeInTheDocument()
     }
   })
 
   it('validates before sending and points to the problem', async () => {
-    const fetchMock = mockFetch()
+    const fetchMock = setup()
     const user = await renderWithDescription('too short')
     await user.click(screen.getByRole('button', { name: 'Check posting' }))
 
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/jobs/preview'))).toBe(false)
     const field = screen.getByLabelText('Job description')
     expect(field).toHaveAttribute('aria-invalid', 'true')
     expect(field).toHaveAccessibleDescription(/at least 40 characters/)
@@ -49,7 +77,7 @@ describe('JobInputPage', () => {
   })
 
   it('shows what the server recognized', async () => {
-    mockFetch(jsonResponse(200, PREVIEW))
+    setup({ 'POST /jobs/preview': () => jsonResponse(200, PREVIEW) })
     const user = await renderWithDescription()
     await user.type(screen.getByLabelText(/Company/), 'Fictional Retail Co.')
     await user.click(screen.getByRole('button', { name: 'Check posting' }))
@@ -59,12 +87,12 @@ describe('JobInputPage', () => {
     expect(screen.getByText('Required qualifications')).toBeInTheDocument()
     expect(screen.getByText('Responsibilities')).toBeInTheDocument()
     expect(screen.getByText('This looks shorter than a typical posting.')).toBeInTheDocument()
-    expect(screen.getByText(/not saved/)).toBeInTheDocument()
+    expect(screen.getByText(/Demo mode/)).toBeInTheDocument()
   })
 
   it('disables the button while checking', async () => {
     let resolve: (response: Response) => void = () => {}
-    mockFetch(new Promise<Response>((r) => (resolve = r)))
+    setup({ 'POST /jobs/preview': () => new Promise<Response>((r) => (resolve = r)) })
     const user = await renderWithDescription()
     await user.click(screen.getByRole('button', { name: 'Check posting' }))
 
@@ -74,37 +102,22 @@ describe('JobInputPage', () => {
   })
 
   it('maps server field errors onto the matching input', async () => {
-    mockFetch(
-      jsonResponse(422, {
-        error: {
-          code: 'validation_error',
-          message: 'Some fields are missing or invalid.',
-          request_id: 'r1',
-          fields: [
-            {
-              loc: ['body', 'source_url'],
-              message: 'links must not contain a username or password',
-              type: 'value_error',
-            },
-          ],
-        },
-      }),
-    )
+    setup({
+      'POST /jobs/preview': () =>
+        errorResponse(422, 'validation_error', 'Some fields are missing or invalid.', [
+          { loc: ['body', 'source_url'], message: 'links must not contain a username or password', type: 'value_error' },
+        ]),
+    })
     const user = await renderWithDescription()
     await user.type(screen.getByLabelText(/Link to posting/), 'https://user:pw@example.com/job')
     await user.click(screen.getByRole('button', { name: 'Check posting' }))
 
-    const link = screen.getByLabelText(/Link to posting/)
     expect(await screen.findByText('Links must not contain a username or password')).toBeInTheDocument()
-    expect(link).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByLabelText(/Link to posting/)).toHaveAttribute('aria-invalid', 'true')
   })
 
   it('shows a safe message and reference for server errors', async () => {
-    mockFetch(
-      jsonResponse(500, {
-        error: { code: 'internal_error', message: 'Something went wrong on our side.', request_id: 'ref-500', fields: [] },
-      }),
-    )
+    setup({ 'POST /jobs/preview': () => errorResponse(500, 'internal_error', 'Something went wrong on our side.') })
     const user = await renderWithDescription()
     await user.click(screen.getByRole('button', { name: 'Check posting' }))
 
@@ -114,9 +127,35 @@ describe('JobInputPage', () => {
   })
 
   it('explains when the server cannot be reached', async () => {
-    mockFetch(new TypeError('Failed to fetch'))
+    setup({ 'POST /jobs/preview': () => new TypeError('Failed to fetch') })
     const user = await renderWithDescription()
     await user.click(screen.getByRole('button', { name: 'Check posting' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('Could not reach the server')
+  })
+
+  it('saves the posting and opens the tailoring run', async () => {
+    const fetchMock = setup({
+      'POST /jobs/preview': () => jsonResponse(200, PREVIEW),
+      'POST /jobs': () => jsonResponse(201, { id: 'job-1' }),
+      'POST /runs': () => jsonResponse(201, { id: 'run-1' }),
+    })
+    const user = await renderWithDescription()
+    await user.click(screen.getByRole('button', { name: 'Check posting' }))
+    await user.click(await screen.findByRole('button', { name: 'Save and start tailoring' }))
+
+    expect(await screen.findByRole('heading', { name: 'Run page' })).toBeInTheDocument()
+    const runCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/runs') && init?.method === 'POST')!
+    expect(JSON.parse(String(runCall[1]?.body))).toEqual({ job_id: 'job-1' })
+  })
+
+  it('does not offer tailoring when AI is not set up', async () => {
+    setup({
+      'GET /ai/status': () => jsonResponse(200, { ...AI_DEMO, provider: 'disabled', model: null }),
+      'POST /jobs/preview': () => jsonResponse(200, PREVIEW),
+    })
+    const user = await renderWithDescription()
+    await user.click(screen.getByRole('button', { name: 'Check posting' }))
+    expect(await screen.findByText(/not set up on this server/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save and start tailoring' })).toBeDisabled()
   })
 })

@@ -1,5 +1,11 @@
 import type {
+  AIStatus,
   CsrfResponse,
+  JobOut,
+  Question,
+  QuestionAnswer,
+  RunOut,
+  RunSummary,
   ErrorResponse,
   EvidenceItem,
   EvidenceUpdate,
@@ -241,3 +247,34 @@ export const listEvidence = (masterVersionId?: string, signal?: AbortSignal) =>
 
 export const addEvidenceVersion = (id: string, update: EvidenceUpdate) =>
   apiRequest<EvidenceItem>(`/evidence/${encodeURIComponent(id)}/versions`, { method: 'POST', body: update })
+
+// Model calls run inside these requests for now, so allow them more time.
+const AI_TIMEOUT_MS = 180_000
+
+export const getAIStatus = (signal?: AbortSignal) => apiRequest<AIStatus>('/ai/status', { signal })
+
+export const createJob = (input: JobInputRequest) => apiRequest<JobOut>('/jobs', { method: 'POST', body: input })
+
+export const listRuns = (signal?: AbortSignal) => apiRequest<RunSummary[]>('/runs', { signal })
+
+export const startRun = (jobId: string, masterVersionId?: string) =>
+  apiRequest<RunOut>('/runs', {
+    method: 'POST',
+    body: { job_id: jobId, ...(masterVersionId ? { master_version_id: masterVersionId } : {}) },
+    timeoutMs: AI_TIMEOUT_MS,
+  })
+
+export const getRun = (id: string, signal?: AbortSignal) =>
+  apiRequest<RunOut>(`/runs/${encodeURIComponent(id)}`, { signal })
+
+export const answerQuestion = (runId: string, questionId: string, answer: QuestionAnswer) =>
+  apiRequest<Question>(`/runs/${encodeURIComponent(runId)}/questions/${encodeURIComponent(questionId)}`, {
+    method: 'POST',
+    body: answer,
+  })
+
+export const generateDraft = (runId: string) =>
+  apiRequest<RunOut>(`/runs/${encodeURIComponent(runId)}/draft`, { method: 'POST', timeoutMs: AI_TIMEOUT_MS })
+
+export const cancelRun = (runId: string) =>
+  apiRequest<RunOut>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' })

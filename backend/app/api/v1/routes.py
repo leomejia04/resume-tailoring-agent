@@ -11,7 +11,13 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app import __version__
-from app.api.v1 import auth_routes, evidence_routes, masters_routes, profile_routes
+from app.api.v1 import (
+    auth_routes,
+    evidence_routes,
+    masters_routes,
+    profile_routes,
+    tailoring_routes,
+)
 from app.auth.dependencies import current_user
 from app.auth.tokens import VerifiedUser
 from app.schemas.errors import ErrorResponse
@@ -91,3 +97,4 @@ router.include_router(auth_routes.router)
 router.include_router(profile_routes.router)
 router.include_router(masters_routes.router)
 router.include_router(evidence_routes.router)
+router.include_router(tailoring_routes.router)

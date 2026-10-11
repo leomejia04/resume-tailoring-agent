@@ -80,10 +80,20 @@ class OpenAIResponsesClient:
             raise LLMError("unavailable")
         self.model = settings.openai_model
         self._effort = settings.openai_reasoning_effort
+        http_client = None
+        if settings.use_os_trust_store:
+            import ssl
+
+            import truststore
+            from openai import DefaultHttpxClient
+
+            context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+            http_client = DefaultHttpxClient(verify=context)  # keeps the SDK's defaults
         self._client = OpenAI(
             api_key=settings.openai_api_key.get_secret_value(),
             timeout=settings.openai_timeout_seconds,
             max_retries=settings.openai_max_retries,
+            http_client=http_client,
         )
 
     def parse(

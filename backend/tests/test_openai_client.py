@@ -130,3 +130,24 @@ def test_provider_selection():
     assert client_for(make_settings(openai_api_key="sk-test-not-real")).provider == "openai"
     assert client_for(make_settings(llm_provider="demo")).provider == "demo"
     assert make_client(openai_reasoning_effort="medium")._effort == "medium"
+
+
+def test_os_trust_store_is_opt_in_and_keeps_verification(monkeypatch):
+    import ssl
+
+    import truststore
+
+    built = []
+
+    class RecordingClient(openai.DefaultHttpxClient):
+        def __init__(self, **kwargs):
+            built.append(kwargs)
+            super().__init__(**kwargs)
+
+    monkeypatch.setattr(openai, "DefaultHttpxClient", RecordingClient)
+    make_client()
+    assert built == []  # default: the SDK's own bundled certificates
+    make_client(use_os_trust_store=True)
+    context = built[0]["verify"]
+    assert isinstance(context, truststore.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname

@@ -3,7 +3,7 @@
 A hosted, multi-user application for creating truthful, tailored, one-page PDF
 resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md).
 
-**Current state:** milestones 1-3 and 5 are complete; milestone 4 (AI tailoring baseline) is built and tested with a demo provider and mocked model, pending a live OpenAI run. Milestone 6 is in progress: ATS match estimates are scored, saved, and required for approval (6a-6b); the durable worker, automatic improvements, and the application tracker are next.
+**Current state:** milestones 1-5 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 is in progress: ATS match estimates are scored, saved, and required for approval (6a-6b); the durable worker, automatic improvements, and the application tracker are next.
 
 - Document proof: a fictional master DOCX is edited in a copy with formatting
   preserved, rendered to PDF in a sandboxed LibreOffice container, and inspected.
@@ -241,6 +241,7 @@ Environment variables (see [.env.example](.env.example)):
 | `OPENAI_API_KEY` | (unset) | Server-side OpenAI key |
 | `OPENAI_MODEL` | `gpt-5.6-luna` | Verified on OpenAI's model page (2026-10-11) |
 | `OPENAI_REASONING_EFFORT` | `low` | Benchmark starting point |
+| `USE_OS_TRUST_STORE` | `false` | `true` verifies HTTPS with the operating system's certificates (needed when antivirus such as Norton scans HTTPS); verification stays on |
 | `USER_DAILY_BUDGET_USD` / `APP_DAILY_BUDGET_USD` | `0.50` / `5.00` | Atomic spending limits checked before every model call |
 | `PRICE_*_PER_MTOK` | official rates | Used for cost accounting |
 

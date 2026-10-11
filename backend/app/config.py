@@ -75,6 +75,9 @@ class Settings(BaseSettings):
     openai_reasoning_effort: Literal["none", "low", "medium", "high", "xhigh", "max"] = "low"
     openai_timeout_seconds: float = Field(default=90, ge=5, le=300)
     openai_max_retries: int = Field(default=2, ge=0, le=5)
+    # Verify HTTPS against the operating system's certificates instead of the
+    # bundled list, e.g. when local antivirus re-signs HTTPS. Verification stays on.
+    use_os_trust_store: bool = False
     # USD per 1M tokens, from the model's official pricing page (verify before changing).
     price_input_per_mtok: Decimal = Decimal("0.20")
     price_cached_input_per_mtok: Decimal = Decimal("0.02")

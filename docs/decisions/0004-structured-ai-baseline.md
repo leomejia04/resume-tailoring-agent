@@ -1,6 +1,6 @@
 # ADR 0004: Structured AI baseline (grounded tailoring)
 
-Status: accepted (milestone 4; live OpenAI calls not yet run)
+Status: accepted (milestone 4; live smoke test passed 2026-10-11)
 
 ## Model verification (2026-10-11)
 The selected model `gpt-5.6-luna` is listed on OpenAI's official model page
@@ -76,9 +76,33 @@ facts, and UUIDs, RLS on all new tables, request shape (`store=False`, hashed
 safety identifier, low effort, structured output). A manual browser run in
 demo mode covered posting -> questions -> confirmation -> draft -> redraft.
 
+### Live smoke test (2026-10-11, owner-authorized $1 cap)
+- Free checks first: `GET /v1/models/gpt-5.6-luna` returned the model for the
+  owner's key. OpenAI's model page confirms $0.20 / $0.02 cached / $1.20 per
+  1M tokens (cache writes 1.25x input; >272K-token prompts surcharged), the
+  Responses API, Structured Outputs, and reasoning effort `low`; the configured
+  prices already matched.
+- One run on the fictional fixture resume and the fictional posting (which
+  contains a prompt-injection line), through the real routes with the app cap
+  lowered to $1.00: job analysis (4 sensible requirements, two precise
+  questions about Tableau and Snowflake, injection ignored), draft (validation
+  passed with no issues and no repair; every bullet cites one fact; no
+  Kubernetes claim), one chat revision ("lead with the SQL work"; it reordered
+  and tightened without new facts and explained it kept Power BI rather than
+  Tableau), then a one-page PDF that passed the layout and ATS checks.
+- Recorded usage: analysis 464 in / 129 out tokens, draft 1,166 / 700 (355
+  reasoning), chat 1,555 / 282 (119 reasoning); total $0.0021, latencies
+  4-8 s. Recorded cost uses our configured prices; the owner should compare it
+  with OpenAI's usage dashboard.
+- Local note: Norton Antivirus re-signs HTTPS on the development machine, so
+  Python's bundled certificates reject api.openai.com. `USE_OS_TRUST_STORE=true`
+  makes the OpenAI client verify against the Windows certificate store
+  (`truststore`, MIT, the library pip bundles); verification is never off.
+
 ## Limitations
-- No live OpenAI call has been made: needs `OPENAI_API_KEY` and an explicitly
-  authorized evaluation budget. Prompt quality is therefore unmeasured.
+- The live check covered one fictional Data Analyst posting. Prompt quality
+  across Data, GRC, Business Analyst, and Tech Sales postings is not yet
+  measured; that belongs to the labeled evaluation set (milestone 7).
 - Requirement coverage is literal term matching; synonyms and semantic
   coverage arrive with retrieval/ATS work (milestones 6-7).
 - The name-like-token rule can reject harmless capitalization; the repair or

@@ -31,7 +31,8 @@ EMAIL_DOMAIN = "example.test"
 
 
 def _settings_or_skip() -> Settings:
-    settings = Settings()
+    # Routine tests never reach the paid model, even when .env holds a real key.
+    settings = Settings().model_copy(update={"openai_api_key": None, "llm_provider": "demo"})
     if settings.database_url is None or settings.supabase_anon_key is None:
         pytest.skip("local Supabase settings not configured in .env")
     try:

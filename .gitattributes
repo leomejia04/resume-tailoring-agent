@@ -1,0 +1,4 @@
+# Shell scripts and Dockerfiles run inside Linux containers: a Windows CRLF
+# line ending would break the "#!/bin/sh" line, so always check out with LF.
+*.sh text eol=lf
+Dockerfile text eol=lf

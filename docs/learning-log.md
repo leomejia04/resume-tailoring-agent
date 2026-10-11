@@ -31,3 +31,18 @@ Short notes on concepts introduced while building, in plain language.
 - **Inspecting the real PDF.** We check the artifact users download, not the
   DOCX we intended: page count, extractable text (ATS parsers need it), text
   touching page edges (clipping), and phrase order (reading order).
+- **Docker image vs container.** An image is a packaged, read-only environment
+  ("Debian + LibreOffice + fonts"); a container is one running copy of it. We
+  start a fresh container for every conversion and delete it afterwards, so
+  nothing from one user's document can linger for the next.
+- **Sandboxing a converter.** Office files are a classic attack vector, so the
+  container gets no network, no access to your folders, a read-only system, no
+  root user, and memory/CPU/process limits. Data goes in through stdin and the
+  PDF comes out through stdout, like piping in a terminal: `cat a.docx | convert`.
+- **Pinning by digest.** `debian:trixie-slim` is a moving tag; `@sha256:...` is
+  a fingerprint of exact image contents, so builds are reproducible.
+- **Line endings.** Windows uses CRLF, Linux LF. A CRLF in a shell script makes
+  Linux look for `/bin/sh\r` (with a hidden carriage return), which does not exist; `.gitattributes` forces LF.
+- **Tests that catch the tester.** The reading-order check failed the first
+  real run because the test listed phrases in the wrong order. A check that
+  can fail is worth more than one that always passes.

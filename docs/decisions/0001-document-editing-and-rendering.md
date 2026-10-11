@@ -28,11 +28,23 @@ Masters are immutable.
    using canonical XML (C14N): every non-document part must be identical, page
    setup must be identical, every other paragraph's formatting and runs must be
    identical, and the target's `w:pPr` must be identical.
-6. **Rendering with headless LibreOffice** in a fresh temp directory with a
-   throwaway profile, fixed input filename, argument list (no shell), and a
-   timeout. Production rendering will run in a Linux container with pinned
-   fonts; the host machine is never assumed to have Word or LibreOffice.
-7. **PDF inspection with PyMuPDF**: page count, page size, searchable text,
+6. **Rendering with headless LibreOffice**, through two backends with one
+   contract (`convert.py`). `local` runs an installed `soffice` in a fresh temp
+   directory with a throwaway profile (used inside the production worker
+   container). `docker` streams the DOCX to a disposable container on stdin and
+   reads the PDF from stdout (used on development hosts): no network, no host
+   mounts, read-only root filesystem with a private tmpfs, non-root user, all
+   capabilities dropped, no-new-privileges, 1 GB memory, 1 CPU, 256 processes,
+   a timeout inside the container, and an outer timeout that force-removes the
+   container. Both use argument lists (no shell), fixed filenames, a 20 MiB
+   input cap, and require output starting with `%PDF-`. The host machine is
+   never assumed to have Word or LibreOffice.
+   The image (`docker/converter/`) is Debian 13 slim pinned by digest with
+   LibreOffice 25.2.3 (`libreoffice-writer-nogui`) and Liberation, Carlito,
+   Caladea, and DejaVu fonts. Debian package versions are recorded in
+   `/etc/converter-versions.txt` rather than pinned, because Debian drops
+   superseded versions from its mirrors; rebuilds pick up security updates.
+7. **PDF inspection with pdfplumber** (pdfminer.six text/positions, pypdfium2 page images): page count, page size, searchable text,
    fonts used, spans touching the page edge (clipping), and expected phrases
    present in reading order.
 8. **Fonts:** fixtures use Arial, which is metric-compatible with Liberation
@@ -56,15 +68,20 @@ Masters are immutable.
 - **Rendering fidelity is LibreOffice's, not Word's.** Minor differences in
   kerning and line breaking versus Microsoft Word are possible; the PDF we
   inspect and show is the PDF the user downloads.
-- On Windows, `subprocess` timeouts kill the launcher; a stray `soffice.bin`
-  process can survive. Production conversion runs in a container where the
-  whole process tree is bounded.
+- The `local` backend on Windows is unverified: a timeout kills the launcher,
+  and a stray `soffice.bin` process can survive. Development uses the Docker
+  backend; production runs `local` inside a Linux container.
+- Verified result (2026-10-11): the fictional master and edited copy both
+  render to one US Letter page with no clipping, all expected phrases in
+  order, and fonts LiberationSans/LiberationSans-Bold (Arial substitute) plus
+  OpenSymbol (bullet glyphs).
 
 ## Licensing note
 
-PyMuPDF is dual-licensed AGPL-3.0 / commercial (Artifex). Using it inside a
-network service can trigger AGPL source-availability obligations. The PDF
-inspection code is isolated in `pdf_inspect.py` so it can be swapped for a
-permissively licensed library (e.g. pypdf or pdfminer.six) if the project
-cannot accept AGPL terms. **Decision pending from the project owner.**
-python-docx is MIT; LibreOffice (MPL-2.0) runs as a separate process.
+PyMuPDF was originally specified but is dual-licensed AGPL-3.0 / commercial,
+which can impose source-availability obligations on a network service. The
+project owner chose a permissive stack instead (approved 2026-10-11):
+pdfplumber (MIT), pdfminer.six (MIT), pypdfium2 (BSD-3-Clause/Apache-2.0,
+wrapping Google's PDFium), and Pillow (MIT-CMU). python-docx is MIT;
+LibreOffice (MPL-2.0) runs as a separate process. Check licenses again when
+adding OCR or other document dependencies.

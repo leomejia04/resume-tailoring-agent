@@ -1,4 +1,8 @@
-"""Inspect a rendered PDF: page count, searchable text, clipping, fonts, order."""
+"""Inspect a rendered PDF: page count, searchable text, clipping, fonts, order.
+
+Uses pdfplumber (MIT, built on pdfminer.six) for text and character
+positions, and its pypdfium2 backend (BSD-3/Apache-2.0) for page images.
+"""
 
 from __future__ import annotations
 
@@ -6,10 +10,12 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import pymupdf
+import pdfplumber
 
 # Text closer than this to the page edge (points) is treated as clipped.
 _EDGE_TOLERANCE = 1.0
+# Embedded font subsets are named like "ABCDEF+ArialMT"; drop the prefix.
+_SUBSET_PREFIX = re.compile(r"^[A-Z]{6}\+")
 
 
 @dataclass
@@ -43,31 +49,28 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _touches_edge(word: dict, width: float, height: float) -> bool:
+    return (
+        word["x0"] < _EDGE_TOLERANCE
+        or word["top"] < _EDGE_TOLERANCE
+        or word["x1"] > width - _EDGE_TOLERANCE
+        or word["bottom"] > height - _EDGE_TOLERANCE
+    )
+
+
 def inspect_pdf(path: Path, expected_phrases: list[str] | None = None) -> PdfReport:
-    with pymupdf.open(path) as pdf:
+    with pdfplumber.open(path) as pdf:
         texts, fonts, clipped = [], set(), []
-        first = pdf[0].rect
-        for page_number, page in enumerate(pdf, start=1):
-            rect = page.rect
-            texts.append(page.get_text("text", sort=True))
-            for font in page.get_fonts():
-                fonts.add(font[3])
-            for block in page.get_text("dict")["blocks"]:
-                for line in block.get("lines", []):
-                    for span in line["spans"]:
-                        x0, y0, x1, y1 = span["bbox"]
-                        if not span["text"].strip():
-                            continue
-                        if (
-                            x0 < rect.x0 + _EDGE_TOLERANCE
-                            or y0 < rect.y0 + _EDGE_TOLERANCE
-                            or x1 > rect.x1 - _EDGE_TOLERANCE
-                            or y1 > rect.y1 - _EDGE_TOLERANCE
-                        ):
-                            clipped.append(f"page {page_number}: {span['text'][:40]!r}")
+        for page_number, page in enumerate(pdf.pages, start=1):
+            texts.append(page.extract_text() or "")
+            fonts.update(_SUBSET_PREFIX.sub("", c["fontname"]) for c in page.chars)
+            for word in page.extract_words():
+                if _touches_edge(word, page.width, page.height):
+                    clipped.append(f"page {page_number}: {word['text'][:40]!r}")
+        first = pdf.pages[0]
         report = PdfReport(
-            page_count=pdf.page_count,
-            page_size_pt=(round(first.width, 1), round(first.height, 1)),
+            page_count=len(pdf.pages),
+            page_size_pt=(round(float(first.width), 1), round(float(first.height), 1)),
             text="\n".join(texts),
             fonts=sorted(fonts),
             clipped_spans=clipped,
@@ -88,6 +91,6 @@ def inspect_pdf(path: Path, expected_phrases: list[str] | None = None) -> PdfRep
 
 
 def render_page_png(pdf_path: Path, png_path: Path, page_index: int = 0, dpi: int = 110) -> Path:
-    with pymupdf.open(pdf_path) as pdf:
-        pdf[page_index].get_pixmap(dpi=dpi).save(png_path)
+    with pdfplumber.open(pdf_path) as pdf:
+        pdf.pages[page_index].to_image(resolution=dpi).save(png_path)
     return png_path

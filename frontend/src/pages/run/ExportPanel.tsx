@@ -10,6 +10,7 @@ import {
 import { messageOf } from '../../api/errors'
 import type { RunOut } from '../../api/types'
 import { Alert } from '../../components/Alert'
+import { failure, isActive, jobOf, progress } from './jobs'
 
 interface Props {
   run: RunOut
@@ -26,9 +27,14 @@ export function ExportPanel({ run, onRun }: Props) {
   // Approval also needs a complete ATS check of this exact PDF (enforced by the server too).
   const pdfCheck = run.ats?.final_pdf ?? null
   const checked = pdfCheck?.status === 'complete' && artifact !== null && pdfCheck.artifact_id === artifact.id
+  const renderJob = jobOf(run, 'render')
+  const rendering = isActive(renderJob)
+  const renderFailed = failure(renderJob, 'Creating the PDF')
+  const checkJob = jobOf(run, 'ats_check')
+  const checking = isActive(checkJob)
 
   async function render() {
-    if (busy) return
+    if (busy || rendering) return
     setBusy('render')
     setError(null)
     try {
@@ -41,7 +47,7 @@ export function ExportPanel({ run, onRun }: Props) {
   }
 
   async function check() {
-    if (busy) return
+    if (busy || checking) return
     setBusy('check')
     setError(null)
     try {
@@ -76,6 +82,7 @@ export function ExportPanel({ run, onRun }: Props) {
           {error.message}
         </Alert>
       )}
+      {renderFailed && !rendering && <Alert tone="error">{renderFailed}</Alert>}
       {run.approval && (
         <Alert tone="success">
           Version {run.approval.draft_version} is approved.{' '}
@@ -88,10 +95,14 @@ export function ExportPanel({ run, onRun }: Props) {
         <button
           type="button"
           onClick={render}
-          aria-disabled={busy !== null}
+          aria-disabled={busy !== null || rendering}
           className="rounded-md bg-indigo-700 px-4 py-2 font-medium text-white aria-disabled:opacity-60"
         >
-          {busy === 'render' ? 'Creating PDF… this can take a minute' : current ? 'Create PDF again' : 'Create PDF'}
+          {busy === 'render' || rendering
+            ? progress(renderJob, 'Creating PDF… this can take a minute')
+            : current
+              ? 'Create PDF again'
+              : 'Create PDF'}
         </button>
         {!current && artifact && <p className="text-sm text-slate-600">The draft changed since the last PDF.</p>}
       </div>
@@ -158,10 +169,10 @@ export function ExportPanel({ run, onRun }: Props) {
                 <button
                   type="button"
                   onClick={check}
-                  aria-disabled={busy !== null}
+                  aria-disabled={busy !== null || checking}
                   className="rounded-md border border-slate-300 px-3 py-1.5 aria-disabled:opacity-60"
                 >
-                  {busy === 'check' ? 'Checking…' : 'Run the check'}
+                  {busy === 'check' || checking ? progress(checkJob, 'Checking…') : 'Run the check'}
                 </button>
               </div>
             )}

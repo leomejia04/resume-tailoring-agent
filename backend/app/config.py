@@ -88,6 +88,23 @@ class Settings(BaseSettings):
     analysis_max_output_tokens: int = Field(default=6000, ge=500, le=64_000)
     draft_max_output_tokens: int = Field(default=10_000, ge=500, le=64_000)
     max_context_chars: int = Field(default=60_000, ge=5_000, le=400_000)
+    # A reservation not settled within this time (crash mid-call) is returned.
+    reservation_ttl_seconds: int = Field(default=900, ge=60, le=86_400)
+
+    # --- Durable jobs (ADR 0007). "worker": a separate `python -m app.worker`
+    # process runs them. "inline": the request runs its own job through the same
+    # code before answering (tests only; refused in production).
+    job_runner: Literal["worker", "inline"] = "worker"
+    job_max_attempts: int = Field(default=3, ge=1, le=5)
+    job_lease_seconds: int = Field(default=60, ge=10, le=600)
+    # Retry n waits backoff * 2**(n-1) seconds (transient model, storage, or DB errors).
+    job_retry_backoff_seconds: float = Field(default=5.0, ge=0, le=300)
+    worker_concurrency: int = Field(default=2, ge=1, le=8)
+    worker_poll_seconds: float = Field(default=1.0, ge=0.1, le=30)
+    max_active_jobs_per_user: int = Field(default=4, ge=1, le=20)
+    max_running_jobs_per_user: int = Field(default=1, ge=1, le=8)
+    # Signed download URLs handed to a job (Supabase signed uploads last 2 hours).
+    grant_ttl_seconds: int = Field(default=3600, ge=300, le=7200)
 
     @field_validator("cors_allowed_origins", "trusted_origins", mode="before")
     @classmethod
@@ -123,6 +140,8 @@ class Settings(BaseSettings):
                 raise ValueError("production SUPABASE_URL must be HTTPS")
             if self.llm_provider == "demo":
                 raise ValueError("the demo AI provider is not allowed in production")
+            if self.job_runner != "worker":
+                raise ValueError("production runs jobs in the worker (JOB_RUNNER=worker)")
         if self.llm_provider == "openai" and self.openai_api_key is None:
             raise ValueError("LLM_PROVIDER=openai requires OPENAI_API_KEY")
         return self

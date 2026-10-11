@@ -3,6 +3,7 @@ import { runAtsCheck } from '../../api/client'
 import { messageOf } from '../../api/errors'
 import type { AtsComparison, AtsReport, AtsRequirement, AtsResult, RequirementStatus, RunOut } from '../../api/types'
 import { Alert } from '../../components/Alert'
+import { failure, isActive, jobOf, progress } from './jobs'
 
 const CATEGORY_LABELS = {
   required: 'Required qualifications',
@@ -42,11 +43,14 @@ function ScoreCard({
   report,
   comparison,
   empty,
+  working,
 }: {
   label: string
   report: AtsReport | null | undefined
   comparison?: AtsComparison | null
   empty: string
+  /** Set while a job is producing this report: shown instead of "not checked". */
+  working?: string
 }) {
   return (
     <div className="rounded-md border border-slate-200 bg-white p-4">
@@ -65,6 +69,8 @@ function ScoreCard({
             <Delta comparison={comparison ?? null} />
           </>
         )
+      ) : working ? (
+        <p className="mt-1 font-medium text-slate-800">{working}</p>
       ) : (
         <>
           <p className="mt-1 font-medium text-slate-800">{NOT_SCORED[report.status]}</p>
@@ -221,10 +227,16 @@ export function AtsPanel({ run, onRun }: { run: RunOut; onRun: (run: RunOut) => 
       : shown === ats.draft
         ? `draft version ${ats.draft?.draft_version}`
         : 'your master resume'
-  const recheck = [ats.baseline, ats.draft, ats.final_pdf].some(needsCheck)
+  const checkJob = jobOf(run, 'ats_check')
+  const checking = isActive(checkJob)
+  // The analysis job scores the master right after reading the posting.
+  const scoringBaseline = isActive(jobOf(run, 'analyze'))
+  const recheck = !scoringBaseline && [ats.baseline, ats.draft, ats.final_pdf].some(needsCheck)
+  const working = checking ? progress(checkJob, 'Checking…') : undefined
+  const checkFailed = failure(checkJob, 'The check')
 
   async function check() {
-    if (busy) return
+    if (busy || checking) return
     setBusy(true)
     setError(null)
     try {
@@ -254,28 +266,36 @@ export function AtsPanel({ run, onRun }: { run: RunOut; onRun: (run: RunOut) => 
         </Alert>
       )}
       <div className="grid gap-3 sm:grid-cols-3">
-        <ScoreCard label="Your master resume" report={ats.baseline} empty="Upload a master resume to compare." />
+        <ScoreCard
+          label="Your master resume"
+          report={ats.baseline}
+          empty="Upload a master resume to compare."
+          working={scoringBaseline ? 'Checking…' : working}
+        />
         <ScoreCard
           label={ats.draft ? `This draft (version ${ats.draft.draft_version})` : 'This draft'}
           report={ats.draft}
           comparison={ats.draft_vs_baseline}
           empty="Generate a draft to check it."
+          working={working}
         />
         <ScoreCard
           label="Final PDF"
           report={ats.final_pdf}
           comparison={ats.pdf_vs_baseline}
           empty="Create the PDF to check exactly what you will send."
+          working={working}
         />
       </div>
-      {recheck && (
+      {checkFailed && !checking && <Alert tone="error">{checkFailed}</Alert>}
+      {(recheck || checking) && (
         <button
           type="button"
           onClick={check}
-          aria-disabled={busy}
+          aria-disabled={busy || checking}
           className="rounded-md border border-slate-300 px-3 py-1.5 text-sm aria-disabled:opacity-60"
         >
-          {busy ? 'Checking…' : 'Run the check'}
+          {busy || checking ? progress(checkJob, 'Checking…') : 'Run the check'}
         </button>
       )}
       {shown?.status === 'complete' && shown.result && (

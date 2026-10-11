@@ -135,7 +135,7 @@ def test_failed_pdf_check_blocks_approval_until_rechecked(monkeypatch, demo_app,
 
     monkeypatch.undo()
     checked = account.client.post(f"{account.run_url}/ats/check")
-    assert checked.status_code == 200, checked.text
+    assert checked.status_code == 202, checked.text
     report = checked.json()["ats"]["final_pdf"]
     assert report["status"] == "complete" and report["artifact_id"] == artifact["id"]
     again = account.client.post(f"{account.run_url}/ats/check").json()["ats"]["final_pdf"]
@@ -148,10 +148,10 @@ def test_baseline_failure_never_fails_the_run(monkeypatch, demo_app, docx_bytes)
     account = prepared_account(demo_app, docx_bytes)
     job_id = create_job(account)
 
-    def unavailable(self, path):
+    def unavailable(self):
         raise StorageUnavailableError("down")
 
-    monkeypatch.setattr("app.tailoring.runs.UserStorage.download", unavailable)
+    monkeypatch.setattr("app.tailoring.runs.SignedObject.download", unavailable)
     run = account.client.post("/api/v1/runs", json={"job_id": job_id}).json()
     assert run["status"] in {"ready", "awaiting_confirmation"}
     baseline = run["ats"]["baseline"]

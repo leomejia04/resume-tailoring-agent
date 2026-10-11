@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { describe, expect, it } from 'vitest'
-import type { RunOut } from '../api/types'
+import type { RunJob, RunOut } from '../api/types'
 import { errorResponse, jsonResponse, routeFetch } from '../test/http'
 import { RunPage } from './RunPage'
 
@@ -161,22 +161,50 @@ describe('RunPage', () => {
     })
   })
 
-  it('generates a draft and shows sources and what was removed', async () => {
-    renderRun({
-      'GET /runs/run-1': () => jsonResponse(200, makeRun({ status: 'ready', questions: [] })),
-      'POST /runs/run-1/draft': () =>
-        jsonResponse(200, makeRun({ status: 'awaiting_review', questions: [], draft: DRAFT as RunOut['draft'] })),
+  it('queues a draft, polls while it runs, then shows sources and what was removed', async () => {
+    const job: RunJob = {
+      id: 'job-d',
+      kind: 'draft',
+      status: 'queued',
+      attempts: 0,
+      max_attempts: 3,
+      error_code: null,
+      result: null,
+      created_at: '',
+      finished_at: null,
+    }
+    const fetchMock = renderRun({
+      'GET /runs/run-1': [
+        () => jsonResponse(200, makeRun({ status: 'ready', questions: [] })),
+        () => jsonResponse(200, makeRun({ status: 'drafting', questions: [], jobs: [{ ...job, status: 'running', attempts: 1 }] })),
+        () =>
+          jsonResponse(
+            200,
+            makeRun({
+              status: 'awaiting_review',
+              questions: [],
+              draft: DRAFT as RunOut['draft'],
+              jobs: [{ ...job, status: 'succeeded', attempts: 1 }],
+            }),
+          ),
+      ],
+      'POST /runs/run-1/draft': () => jsonResponse(202, makeRun({ status: 'ready', questions: [], jobs: [job] })),
     })
     const user = userEvent.setup()
     await user.click(await screen.findByRole('button', { name: 'Generate draft' }))
-    const heading = await screen.findByRole('heading', { name: 'Draft (version 1)' })
+    expect(await screen.findByRole('button', { name: 'Waiting to start…' })).toHaveAttribute('aria-disabled', 'true')
+    expect(await screen.findByRole('button', { name: /Drafting…/ }, { timeout: 4000 })).toBeInTheDocument()
+    const heading = await screen.findByRole('heading', { name: 'Draft (version 1)' }, { timeout: 4000 })
     await screen.findByText('Automated reporting with SQL.')
-    expect(heading).toHaveFocus()
+    expect(heading).toHaveFocus() // focus follows the finished job, not the request
+    await new Promise((resolve) => setTimeout(resolve, 1700))
+    const reads = fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith('/runs/run-1') && (init?.method ?? 'GET') === 'GET')
+    expect(reads).toHaveLength(3) // polling stopped once nothing was active
     expect(screen.getByText('Built SQL scripts.')).toBeInTheDocument() // the cited source fact
     expect(screen.getByText('Some statements were removed.')).toBeInTheDocument()
     expect(screen.getByText(/cut costs by 35%/)).toBeInTheDocument()
     expect(screen.getByText(/Produced by demo rules, not AI/)).toBeInTheDocument()
-  })
+  }, 15_000)
 
   it('explains failures and spending limits plainly', async () => {
     renderRun({

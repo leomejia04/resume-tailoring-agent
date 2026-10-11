@@ -3,6 +3,7 @@ import { ApiError, editDraft, regenerateEntry } from '../../api/client'
 import { messageOf } from '../../api/errors'
 import type { DraftOut, EditOperation, RunOut } from '../../api/types'
 import { Alert } from '../../components/Alert'
+import { draftBusy, failure, jobOf, progress } from './jobs'
 
 interface Props {
   run: RunOut
@@ -123,7 +124,12 @@ function BulletRow({
 }
 
 export function DraftEditor({ run, draft, onRun, canRegenerate }: Props) {
-  const [busy, setBusy] = useState(false)
+  const [requesting, setRequesting] = useState(false)
+  // While the AI revises the draft, edits wait: they would conflict with its new version.
+  const revising = draftBusy(run)
+  const busy = requesting || revising
+  const regenerateJob = jobOf(run, 'regenerate')
+  const regenerateFailed = failure(regenerateJob, 'Rewriting the section')
   const [problem, setProblem] = useState<Problem | null>(null)
   const [headline, setHeadline] = useState<string | null>(null)
   const headlineId = useId()
@@ -131,7 +137,7 @@ export function DraftEditor({ run, draft, onRun, canRegenerate }: Props) {
 
   async function apply(operations: EditOperation[]): Promise<boolean> {
     if (busy) return false
-    setBusy(true)
+    setRequesting(true)
     setProblem(null)
     try {
       onRun(await editDraft(run.id, draft.version, operations))
@@ -143,20 +149,20 @@ export function DraftEditor({ run, draft, onRun, canRegenerate }: Props) {
       })
       return false
     } finally {
-      setBusy(false)
+      setRequesting(false)
     }
   }
 
   async function regenerate(ref: string) {
     if (busy) return
-    setBusy(true)
+    setRequesting(true)
     setProblem(null)
     try {
       onRun(await regenerateEntry(run.id, ref, draft.version))
     } catch (err) {
       setProblem({ ...messageOf(err), details: [] })
     } finally {
-      setBusy(false)
+      setRequesting(false)
     }
   }
 
@@ -165,6 +171,16 @@ export function DraftEditor({ run, draft, onRun, canRegenerate }: Props) {
 
   return (
     <div className="space-y-4" aria-busy={busy}>
+      {revising && (
+        <p role="status" className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
+          {progress(
+            [jobOf(run, 'draft'), regenerateJob, jobOf(run, 'chat')].find((j) => j && (j.status === 'queued' || j.status === 'running')),
+            'The AI is revising this draft…',
+          )}{' '}
+          Editing resumes when it finishes.
+        </p>
+      )}
+      {regenerateFailed && !revising && <Alert tone="error">{regenerateFailed}</Alert>}
       {problem && (
         <Alert tone="error" requestId={problem.requestId}>
           {problem.message}

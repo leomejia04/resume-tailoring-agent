@@ -184,3 +184,36 @@ Short notes on concepts introduced while building, in plain language.
 - **Why the re-check is a POST.** Reading a run (GET) must never change data,
   so a missing report is shown as "not checked yet" rather than computed on
   the fly; the user (or, later, the worker) triggers the check explicitly.
+
+### 6c: durable jobs
+
+- **A queue can be a table.** A job is a row with a status. `SELECT ...
+  FOR UPDATE SKIP LOCKED LIMIT 1` lets several workers ask for "the next
+  job" at once: each locks a different row and skips the ones others hold,
+  so no job runs twice and nobody waits.
+- **Leases, not locks, survive crashes.** A worker that claims a job writes
+  "mine until 12:01" and keeps extending it (heartbeats). If the process
+  dies, the lease simply runs out and another worker retries the job. A
+  database lock would have vanished with the connection, but so would the
+  record of what was happening.
+- **Fencing.** Every update a worker makes says `WHERE locked_by = me`. If
+  its lease expired and another worker took over, the late worker's writes
+  match no row and are ignored instead of overwriting the newer result.
+- **Retry only what can change.** A timeout or a busy service may succeed a
+  few seconds later, so it is retried with growing waits (backoff). A refusal,
+  a spending limit, or a version conflict will fail the same way again, so it
+  fails at once with a clear message.
+- **Signed URLs are capabilities.** Whoever holds one can read (or create)
+  that one file until it expires, with no password. That makes them perfect
+  for handing a worker exactly the access one job needs, and dangerous to
+  log: request logging stays off and the URLs are deleted when the job ends.
+- **SECURITY DEFINER, carefully.** A function can run with its owner's
+  privileges instead of the caller's. Owned by a tiny role (`app_queue`) that
+  can only touch the queue, with a pinned `search_path`, it gives the worker
+  one narrow cross-user door instead of a master key. A surprise on the way:
+  after changing a function's owner, REVOKE statements from the previous
+  owner are silently ignored, so privileges must be set first.
+- **202 Accepted.** "I have your request and will do it" is a different
+  promise from "here is the result" (200/201). The client then polls the
+  resource until the work shows up, which also means a page reload or a
+  second tab shows the same truth as the first.

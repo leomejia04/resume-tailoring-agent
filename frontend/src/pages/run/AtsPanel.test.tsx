@@ -182,6 +182,31 @@ describe('AtsPanel', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('says the master is being checked while the analysis job is still scoring it', () => {
+    const pending = overview({ baseline: report('master_baseline', 'pending', null, { checked_at: null }), draft: null })
+    const run = {
+      ...makeRun(pending),
+      jobs: [
+        {
+          id: 'job-a',
+          kind: 'analyze' as const,
+          status: 'running' as const,
+          attempts: 1,
+          max_attempts: 3,
+          error_code: null,
+          result: null,
+          created_at: '',
+          finished_at: null,
+        },
+      ],
+    }
+    render(<AtsPanel run={run} onRun={() => undefined} />)
+    const card = screen.getByRole('heading', { name: 'Your master resume' }).parentElement!
+    expect(within(card).getByText('Checking…')).toBeInTheDocument()
+    expect(screen.queryByText('Not checked yet')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Run the check' })).not.toBeInTheDocument()
+  })
+
   it('asks for a new PDF, not a re-check, when the draft changed after the last PDF', () => {
     const stalePdf = report('final_pdf', 'stale', null, {
       artifact_id: null,

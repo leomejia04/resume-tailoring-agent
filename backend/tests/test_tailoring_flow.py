@@ -153,7 +153,7 @@ def test_full_flow_with_confirmations_and_cached_analysis(demo_app, docx_bytes):
     assert account.client.get(run_url).json()["status"] == "ready"
 
     drafted = account.client.post(f"{run_url}/draft")
-    assert drafted.status_code == 200, drafted.text
+    assert drafted.status_code == 202, drafted.text
     body = drafted.json()
     assert body["status"] == "awaiting_review"
     draft = body["draft"]
@@ -291,7 +291,7 @@ def faithful(payload):
 
 
 def run_with(monkeypatch, app, account, client):
-    monkeypatch.setattr("app.api.v1.tailoring_routes.client_for", lambda settings: client)
+    monkeypatch.setattr("app.ai.client.client_for", lambda settings: client)
     job_id = create_job(account)
     run = account.client.post("/api/v1/runs", json={"job_id": job_id}).json()
     return account.client.post(f"/api/v1/runs/{run['id']}/draft")
@@ -355,20 +355,24 @@ def test_model_failure_marks_run_failed_and_logs_usage(monkeypatch, base_setting
     response = run_with(monkeypatch, app, account, ScriptedClient([faithful], fail_with="timeout"))
     body = response.json()
     assert body["status"] == "failed" and body["error_code"] == "draft_timeout"
-    assert body["usage"]["calls"] == 2  # the failed call is still accounted
+    # A timeout is transient: retried up to the job's attempts, every call accounted.
+    attempts = base_settings.job_max_attempts
+    assert body["usage"]["calls"] == 1 + attempts
+    job = next(j for j in body["jobs"] if j["kind"] == "draft")
+    assert (job["status"], job["attempts"], job["error_code"]) == ("failed", attempts, "timeout")
 
 
 def test_spending_limit_blocks_paid_calls(monkeypatch, base_settings, docx_bytes):
     app = make_app(base_settings, llm_provider="demo", user_daily_budget_usd=Decimal("0.0001"))
     account = prepared_account(app, docx_bytes)
-    monkeypatch.setattr(
-        "app.api.v1.tailoring_routes.client_for", lambda settings: ScriptedClient([faithful])
-    )
+    monkeypatch.setattr("app.ai.client.client_for", lambda settings: ScriptedClient([faithful]))
     job_id = create_job(account)
     blocked = account.client.post("/api/v1/runs", json={"job_id": job_id})
-    assert blocked.status_code == 429 and blocked.json()["error"]["code"] == "budget_exceeded"
-    runs = account.client.get("/api/v1/runs").json()
-    assert runs[0]["status"] == "failed"  # never left stuck in "analyzing"
+    assert blocked.status_code == 202
+    body = blocked.json()  # never left stuck in "analyzing"; not retried (not transient)
+    assert body["status"] == "failed" and body["error_code"] == "analysis_budget_exceeded"
+    job = body["jobs"][0]
+    assert (job["kind"], job["status"], job["attempts"]) == ("analyze", "failed", 1)
 
 
 def test_budget_reservations_are_atomic_under_concurrency(base_settings, demo_app):

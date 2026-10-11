@@ -3,7 +3,7 @@
 A hosted, multi-user application for creating truthful, tailored, one-page PDF
 resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md).
 
-**Current state:** milestones 1-5 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 is in progress: ATS match estimates are scored, saved, and required for approval (6a-6b); the durable worker, automatic improvements, and the application tracker are next.
+**Current state:** milestones 1-5 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 is in progress: ATS match estimates are scored, saved, and required for approval (6a-6b), and slow or paid steps run in a durable background worker with bounded retries and crash recovery (6c); automatic improvements and the application tracker are next.
 
 - Document proof: a fictional master DOCX is edited in a copy with formatting
   preserved, rendered to PDF in a sandboxed LibreOffice container, and inspected.
@@ -145,7 +145,15 @@ Start the API (from `backend/`):
 .venv/Scripts/python -m uvicorn app.main:create_app --factory --reload --port 8000 --no-access-log --no-server-header
 ```
 
-Start the frontend in a second terminal (from `frontend/`):
+Start the background worker in a second terminal (from `backend/`). It runs
+job analysis, drafting, rewrites, chat revisions, PDF rendering, and ATS
+checks; without it those actions stay "Waiting to start":
+
+```bash
+.venv/Scripts/python -m app.worker
+```
+
+Start the frontend in a third terminal (from `frontend/`):
 
 ```bash
 npm run dev
@@ -165,6 +173,11 @@ Windows tips:
 - Stop servers with Ctrl+C. With `--reload`, uvicorn runs a watcher plus a
   worker process; force-killing only the watcher leaves the worker holding
   port 8000.
+- The background worker stops with Ctrl+C after finishing its current jobs.
+  If it is killed mid-job, the next worker retries that job once its lease
+  (60 seconds) expires.
+- If HTTPS calls to OpenAI fail with a certificate error, antivirus HTTPS
+  scanning (e.g. Norton) is re-signing traffic: set `USE_OS_TRUST_STORE=true`.
 - Stop `npm run dev` before running `npm ci`: Windows locks native modules
   that a running process has loaded, and `npm ci` fails with `EPERM`.
 
@@ -243,6 +256,13 @@ Environment variables (see [.env.example](.env.example)):
 | `OPENAI_REASONING_EFFORT` | `low` | Benchmark starting point |
 | `USE_OS_TRUST_STORE` | `false` | `true` verifies HTTPS with the operating system's certificates (needed when antivirus such as Norton scans HTTPS); verification stays on |
 | `USER_DAILY_BUDGET_USD` / `APP_DAILY_BUDGET_USD` | `0.50` / `5.00` | Atomic spending limits checked before every model call |
+| `RESERVATION_TTL_SECONDS` | `900` | An unsettled reservation (crash mid-call) is returned after this |
+| `JOB_RUNNER` | `worker` | `worker`: `python -m app.worker` runs jobs; `inline`: the request runs its own job (tests only; refused in production) |
+| `JOB_MAX_ATTEMPTS` / `JOB_RETRY_BACKOFF_SECONDS` | `3` / `5` | Bounded retries for transient failures (backoff doubles) |
+| `JOB_LEASE_SECONDS` | `60` | How long a silent worker keeps a job before another may retry it |
+| `WORKER_CONCURRENCY` / `WORKER_POLL_SECONDS` | `2` / `1.0` | Worker threads and idle polling interval |
+| `MAX_ACTIVE_JOBS_PER_USER` / `MAX_RUNNING_JOBS_PER_USER` | `4` / `1` | Per-user queue limit (429) and fair-share running limit |
+| `GRANT_TTL_SECONDS` | `3600` | Lifetime of signed download URLs handed to a job |
 | `PRICE_*_PER_MTOK` | official rates | Used for cost accounting |
 
 ## Updating dependencies

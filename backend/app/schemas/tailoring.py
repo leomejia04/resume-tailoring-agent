@@ -98,6 +98,20 @@ class CurrentApproval(BaseModel):
     approved_at: datetime
 
 
+class JobStatusOut(BaseModel):
+    """Background work for a run (the latest of each kind); the UI polls while one is active."""
+
+    id: uuid.UUID
+    kind: Literal["analyze", "draft", "regenerate", "chat", "render", "ats_check"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
+    attempts: int
+    max_attempts: int
+    error_code: str | None
+    result: dict | None
+    created_at: datetime
+    finished_at: datetime | None
+
+
 class RunUsage(BaseModel):
     calls: int
     cost_usd: Decimal
@@ -120,6 +134,7 @@ class RunOut(BaseModel):
     approval: CurrentApproval | None = None
     # ATS match estimate reports; None until the posting has been analyzed.
     ats: AtsOverview | None = None
+    jobs: list[JobStatusOut] = Field(default_factory=list)
     usage: RunUsage
     created_at: datetime
     updated_at: datetime

@@ -3,6 +3,7 @@ import { chatRevision, editDraft, getPreferences, listChat, rememberPreferences 
 import { messageOf } from '../../api/errors'
 import type { ChatMessage, FormatPreferences, RunOut } from '../../api/types'
 import { Alert } from '../../components/Alert'
+import { isActive, jobOf, progress } from './jobs'
 
 const DEFAULT_FORMAT: FormatPreferences = {
   max_bullets_per_entry: 4,
@@ -19,32 +20,29 @@ export function ChatPanel({ run, onRun, enabled }: { run: RunOut; onRun: (run: R
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ message: string; requestId: string | null } | null>(null)
+  const chatJob = jobOf(run, 'chat')
+  const revising = isActive(chatJob)
 
+  // The reply is saved by the background job: reload when a chat job starts or finishes.
   useEffect(() => {
     const controller = new AbortController()
     listChat(run.id, controller.signal)
       .then(setMessages)
       .catch(() => undefined)
     return () => controller.abort()
-  }, [run.id])
+  }, [run.id, chatJob?.id, chatJob?.status])
 
   if (!run.draft) return null
 
   async function send(event: FormEvent) {
     event.preventDefault()
-    if (busy || text.trim().length < 2) return
+    if (busy || revising || text.trim().length < 2) return
     setBusy(true)
     setError(null)
     const message = text.trim()
     try {
-      const result = await chatRevision(run.id, message, run.draft!.version)
-      setMessages((m) => [
-        ...m,
-        { role: 'user', content: message, draft_version: null, created_at: new Date().toISOString() },
-        { role: 'assistant', content: result.reply, draft_version: result.new_version, created_at: new Date().toISOString() },
-      ])
+      onRun(await chatRevision(run.id, message, run.draft!.version))
       setText('')
-      onRun(result.run)
     } catch (err) {
       setError(messageOf(err))
     } finally {
@@ -92,11 +90,11 @@ export function ChatPanel({ run, onRun, enabled }: { run: RunOut; onRun: (run: R
         />
         <button
           type="submit"
-          aria-disabled={busy || !enabled}
+          aria-disabled={busy || revising || !enabled}
           disabled={!enabled}
           className="rounded-md bg-indigo-700 px-3 py-1.5 text-sm font-medium text-white aria-disabled:opacity-60"
         >
-          {busy ? 'Revising… this can take a minute' : 'Send'}
+          {busy || revising ? progress(chatJob, 'Revising… this can take a minute') : 'Send'}
         </button>
       </form>
     </section>

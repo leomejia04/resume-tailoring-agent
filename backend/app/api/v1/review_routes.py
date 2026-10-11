@@ -1,4 +1,9 @@
-"""Draft review: versions, edits, revisions, rendering, approval, downloads."""
+"""Draft review: versions, edits, revisions, rendering, approval, downloads.
+
+Direct edits, restores, and approval are quick and answer synchronously.
+Section rewrites, chat revisions, PDF rendering, and ATS checks are durable
+jobs: those routes answer 202 Accepted with the run; poll ``GET /runs/{id}``.
+"""
 
 from __future__ import annotations
 
@@ -15,7 +20,7 @@ from sqlalchemy import func, select, update
 
 from app.api.errors import ApiError
 from app.api.v1.auth_routes import ensure_profile
-from app.api.v1.tailoring_routes import _client, _load_run_out
+from app.api.v1.tailoring_routes import _load_run_out
 from app.auth import rate_limit
 from app.auth.dependencies import current_user, enforce_limit, get_app_settings, user_db
 from app.auth.tokens import VerifiedUser
@@ -30,6 +35,7 @@ from app.db.models import (
     TailoringRun,
 )
 from app.documents.pdf_inspect import render_page_png
+from app.jobs import requests as job_requests
 from app.render.format import FormatPreferences
 from app.schemas.ats import ShownStatus
 from app.schemas.errors import ErrorResponse
@@ -83,12 +89,6 @@ class ChatRequest(BaseModel):
 
     message: str = Field(min_length=2, max_length=500)
     expected_version: int = Field(ge=1)
-
-
-class ChatOut(BaseModel):
-    reply: str
-    new_version: int | None
-    run: RunOut
 
 
 class ChatMessageOut(BaseModel):
@@ -197,32 +197,37 @@ def restore(
     return _load_run_out(settings, user, run_id)
 
 
-@router.post("/runs/{run_id}/draft/regenerate", response_model=RunOut, responses=_ERRORS)
+_ACCEPTED = {
+    "response_model": RunOut,
+    "status_code": status.HTTP_202_ACCEPTED,
+    "responses": _ERRORS,
+}
+
+
+@router.post("/runs/{run_id}/draft/regenerate", **_ACCEPTED)
 def regenerate(
     run_id: uuid.UUID,
     body: RegenerateRequest,
     user: VerifiedUser = Depends(current_user),
     settings: Settings = Depends(get_app_settings),
 ) -> RunOut:
-    client = _client(settings)
+    """Queue a rewrite of one section; the new version appears when the job finishes."""
     enforce_limit(settings, rate_limit.AI_DRAFT_USER, str(user.id))
-    review.regenerate_entry(settings, user, client, run_id, body.entry_ref, body.expected_version)
+    job_requests.request_regenerate(settings, user, run_id, body.entry_ref, body.expected_version)
     return _load_run_out(settings, user, run_id)
 
 
-@router.post("/runs/{run_id}/draft/chat", response_model=ChatOut, responses=_ERRORS)
+@router.post("/runs/{run_id}/draft/chat", **_ACCEPTED)
 def chat(
     run_id: uuid.UUID,
     body: ChatRequest,
     user: VerifiedUser = Depends(current_user),
     settings: Settings = Depends(get_app_settings),
-) -> ChatOut:
-    client = _client(settings)
+) -> RunOut:
+    """Save the instruction and queue the revision; the reply appears in the chat history."""
     enforce_limit(settings, rate_limit.AI_DRAFT_USER, str(user.id))
-    new_version, reply = review.chat_revision(
-        settings, user, client, run_id, body.message, body.expected_version
-    )
-    return ChatOut(reply=reply, new_version=new_version, run=_load_run_out(settings, user, run_id))
+    job_requests.request_chat(settings, user, run_id, body.message, body.expected_version)
+    return _load_run_out(settings, user, run_id)
 
 
 @router.get("/runs/{run_id}/chat", response_model=list[ChatMessageOut], responses=_ERRORS)
@@ -260,19 +265,15 @@ def chat_history(
 # --- Rendering, preview, approval, downloads ------------------------------------
 
 
-@router.post(
-    "/runs/{run_id}/render",
-    response_model=RunOut,
-    status_code=status.HTTP_201_CREATED,
-    responses=_ERRORS,
-)
+@router.post("/runs/{run_id}/render", **_ACCEPTED)
 def render(
     run_id: uuid.UUID,
     user: VerifiedUser = Depends(current_user),
     settings: Settings = Depends(get_app_settings),
 ) -> RunOut:
+    """Queue rendering of the current draft version to the PDF you will review."""
     enforce_limit(settings, rate_limit.RENDER_USER, str(user.id))
-    review.render_current(settings, user, run_id)
+    job_requests.request_render(settings, user, run_id)
     return _load_run_out(settings, user, run_id)
 
 
@@ -315,15 +316,15 @@ def artifact_preview(
     return Response(content=png, media_type="image/png")
 
 
-@router.post("/runs/{run_id}/ats/check", response_model=RunOut, responses=_ERRORS)
+@router.post("/runs/{run_id}/ats/check", **_ACCEPTED)
 def ats_check(
     run_id: uuid.UUID,
     user: VerifiedUser = Depends(current_user),
     settings: Settings = Depends(get_app_settings),
 ) -> RunOut:
-    """Run any missing, failed, or out-of-date ATS checks for the run's current versions."""
+    """Queue any missing, failed, or out-of-date ATS checks for the run's current versions."""
     enforce_limit(settings, rate_limit.ATS_CHECK_USER, str(user.id))
-    review.run_checks(settings, user, run_id)
+    job_requests.request_ats_check(settings, user, run_id)
     return _load_run_out(settings, user, run_id)
 
 

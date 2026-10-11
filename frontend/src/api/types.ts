@@ -245,6 +245,7 @@ export interface DraftOut {
 }
 
 export type RunStatus =
+  | 'queued'
   | 'analyzing'
   | 'awaiting_confirmation'
   | 'ready'
@@ -269,6 +270,7 @@ export interface RunOut {
   artifact?: ArtifactOut | null
   approval?: CurrentApproval | null
   ats?: AtsOverview | null
+  jobs?: RunJob[]
   usage: { calls: number; cost_usd: string; input_tokens: number; output_tokens: number }
   created_at: string
   updated_at: string
@@ -446,4 +448,21 @@ export interface AtsOverview {
   final_pdf: AtsReport | null
   draft_vs_baseline: AtsComparison | null
   pdf_vs_baseline: AtsComparison | null
+}
+
+// --- Durable jobs (mirrors JobStatusOut in backend/app/schemas/tailoring.py) ---
+
+export type JobKind = 'analyze' | 'draft' | 'regenerate' | 'chat' | 'render' | 'ats_check'
+export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
+
+export interface RunJob {
+  id: string
+  kind: JobKind
+  status: JobState
+  attempts: number
+  max_attempts: number
+  error_code: string | null
+  result: Record<string, unknown> | null
+  created_at: string
+  finished_at: string | null
 }

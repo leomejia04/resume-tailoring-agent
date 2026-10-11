@@ -1,12 +1,12 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
-import type { ArtifactOut, AtsOverview, RunOut } from '../../api/types'
+import type { ArtifactOut, AtsOverview, RunJob, RunOut } from '../../api/types'
 import { errorResponse, jsonResponse, routeFetch } from '../../test/http'
 import { DraftEditor } from './DraftEditor'
 import { ExportPanel } from './ExportPanel'
-import { FormatPanel } from './RevisePanel'
+import { ChatPanel, FormatPanel } from './RevisePanel'
 import { VersionHistory } from './VersionHistory'
 
 const FORMAT = {
@@ -263,5 +263,70 @@ describe('FormatPanel', () => {
     expect(await screen.findByText('Applied and remembered for future resumes.')).toBeInTheDocument()
     const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT')!
     expect(JSON.parse(String(put[1]?.body))).toEqual({ preferences: { ...FORMAT, project_bullets: 2 }, expected_version: 4 })
+  })
+})
+
+function job(kind: RunJob['kind'], status: RunJob['status'], extra: Partial<RunJob> = {}): RunJob {
+  return {
+    id: `job-${kind}`,
+    kind,
+    status,
+    attempts: status === 'queued' ? 0 : 1,
+    max_attempts: 3,
+    error_code: null,
+    result: null,
+    created_at: '',
+    finished_at: null,
+    ...extra,
+  }
+}
+
+describe('background jobs', () => {
+  it('shows PDF creation progress, retries, and failures from the render job', () => {
+    const { rerender } = render(<ExportPanel run={makeRun({ jobs: [job('render', 'queued')] })} onRun={() => undefined} />)
+    expect(screen.getByRole('button', { name: 'Waiting to start…' })).toHaveAttribute('aria-disabled', 'true')
+    rerender(<ExportPanel run={makeRun({ jobs: [job('render', 'queued', { attempts: 1, error_code: 'timeout' })] })} onRun={() => undefined} />)
+    expect(screen.getByRole('button', { name: 'Trying again (attempt 2 of 3)…' })).toBeInTheDocument()
+    rerender(<ExportPanel run={makeRun({ jobs: [job('render', 'failed', { error_code: 'grant_expired' })] })} onRun={() => undefined} />)
+    expect(screen.getByRole('alert')).toHaveTextContent('This waited too long to start. Try again.')
+    expect(screen.getByRole('button', { name: 'Create PDF' })).not.toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('pauses editing while the AI revises the draft', () => {
+    const run = makeRun({ jobs: [job('chat', 'running')] })
+    render(<DraftEditor run={run} draft={run.draft!} onRun={() => undefined} canRegenerate={true} />)
+    expect(screen.getByRole('status')).toHaveTextContent('Editing resumes when it finishes.')
+    expect(screen.getByRole('button', { name: 'Rewrite this section' })).toHaveAttribute('aria-disabled', 'true')
+  })
+
+  it('queues a chat revision and shows the reply once the job finishes', async () => {
+    let finished = false
+    const fetchMock = routeFetch({
+      'GET /runs/run-1/chat': () =>
+        jsonResponse(
+          200,
+          finished
+            ? [
+                { role: 'user', content: 'Lead with SQL', draft_version: null, created_at: '' },
+                { role: 'assistant', content: 'I put the SQL work first.', draft_version: 2, created_at: '' },
+              ]
+            : [],
+        ),
+      'POST /runs/run-1/draft/chat': () => jsonResponse(202, makeRun({ jobs: [job('chat', 'queued')] })),
+    })
+    const updates: RunOut[] = []
+    const { rerender } = render(<ChatPanel run={makeRun()} onRun={(r) => updates.push(r)} enabled={true} />)
+    const user = userEvent.setup()
+    await user.type(screen.getByLabelText('What should change?'), 'Lead with SQL')
+    await user.click(screen.getByRole('button', { name: 'Send' }))
+    await waitFor(() => expect(updates).toHaveLength(1))
+    rerender(<ChatPanel run={updates[0]!} onRun={() => undefined} enabled={true} />)
+    expect(screen.getByRole('button', { name: 'Waiting to start…' })).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.queryByText('I put the SQL work first.')).not.toBeInTheDocument()
+    finished = true // the worker saved the reply; the same panel reloads when the job finishes
+    rerender(<ChatPanel run={makeRun({ jobs: [job('chat', 'succeeded')] }, 2)} onRun={() => undefined} enabled={true} />)
+    expect(await screen.findByText('I put the SQL work first.')).toBeInTheDocument()
+    const chatReads = fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith('/chat') && (init?.method ?? 'GET') === 'GET')
+    expect(chatReads).toHaveLength(3) // mount, job queued, job finished
   })
 })

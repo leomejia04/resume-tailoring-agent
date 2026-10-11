@@ -1,8 +1,9 @@
 """Jobs, tailoring runs, contextual confirmations, and drafts.
 
-Model calls run synchronously in the request for this baseline; the durable
-worker in milestone 6 will call the same workflow functions. Paid routes are
-rate-limited per user and protected by the atomic daily spending limits.
+Slow and paid steps run as durable jobs (ADR 0007): these routes validate,
+queue the job, and answer 202 Accepted with the run and its jobs; clients poll
+``GET /runs/{id}`` until no job is active. Paid routes are rate-limited per
+user and protected by the atomic daily spending limits.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import and_, func, select
 
 from app.ai.budget import today
-from app.ai.client import LLMClient, LLMError, client_for
 from app.api.errors import ApiError
 from app.ats import reports
 from app.auth import rate_limit
@@ -36,6 +36,8 @@ from app.db.models import (
     TailoringRun,
     UsageEvent,
 )
+from app.jobs import queue as job_queue
+from app.jobs import requests as job_requests
 from app.schemas.errors import ErrorResponse
 from app.schemas.tailoring import (
     AIStatus,
@@ -44,6 +46,7 @@ from app.schemas.tailoring import (
     DraftOut,
     JobCreate,
     JobOut,
+    JobStatusOut,
     QuestionAnswer,
     QuestionOut,
     RunCreate,
@@ -65,16 +68,6 @@ DISCLOSURE = (
     "storage turned off; OpenAI states that API data is not used to train its models by "
     "default and that abuse-monitoring logs may be kept for up to 30 days."
 )
-
-
-def _client(settings: Settings) -> LLMClient:
-    try:
-        client = client_for(settings)
-    except LLMError as exc:
-        raise ApiError(503, "ai_unavailable", "AI features are not configured.") from exc
-    if client is None:
-        raise ApiError(503, "ai_unavailable", "AI features are not configured on this server yet.")
-    return client
 
 
 def _job_out(posting: JobPosting) -> JobOut:
@@ -284,6 +277,20 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
         artifact=artifact_out,
         approval=approval_out,
         ats=ats,
+        jobs=[
+            JobStatusOut(
+                id=j.id,
+                kind=j.kind,  # type: ignore[arg-type]
+                status=j.status,  # type: ignore[arg-type]
+                attempts=j.attempts,
+                max_attempts=j.max_attempts,
+                error_code=j.error_code,
+                result=j.result,
+                created_at=j.created_at,
+                finished_at=j.finished_at,
+            )
+            for j in job_queue.latest_by_kind(db, run.id)
+        ],
         usage=RunUsage(
             calls=usage[0],
             cost_usd=Decimal(usage[1]),
@@ -305,15 +312,17 @@ def _load_run_out(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) -> 
         return _run_out(db, user, run)
 
 
-@router.post("/runs", response_model=RunOut, status_code=status.HTTP_201_CREATED, responses=_ERRORS)
+@router.post(
+    "/runs", response_model=RunOut, status_code=status.HTTP_202_ACCEPTED, responses=_ERRORS
+)
 def create_run(
     body: RunCreate,
     user: VerifiedUser = Depends(current_user),
     settings: Settings = Depends(get_app_settings),
 ) -> RunOut:
-    client = _client(settings)
+    """Create a run and queue the posting analysis."""
     enforce_limit(settings, rate_limit.AI_RUN_USER, str(user.id))
-    run_id = runs.start_run(settings, user, client, body.job_id, body.master_version_id)
+    run_id = job_requests.start_analysis(settings, user, body.job_id, body.master_version_id)
     return _load_run_out(settings, user, run_id)
 
 
@@ -385,15 +394,20 @@ def answer_question(
     )
 
 
-@router.post("/runs/{run_id}/draft", response_model=RunOut, responses=_ERRORS)
+@router.post(
+    "/runs/{run_id}/draft",
+    response_model=RunOut,
+    status_code=status.HTTP_202_ACCEPTED,
+    responses=_ERRORS,
+)
 def draft(
     run_id: uuid.UUID,
     user: VerifiedUser = Depends(current_user),
     settings: Settings = Depends(get_app_settings),
 ) -> RunOut:
-    client = _client(settings)
+    """Queue a tailored draft (or a new one)."""
     enforce_limit(settings, rate_limit.AI_DRAFT_USER, str(user.id))
-    runs.generate_draft(settings, user, client, run_id)
+    job_requests.request_draft(settings, user, run_id)
     return _load_run_out(settings, user, run_id)
 
 

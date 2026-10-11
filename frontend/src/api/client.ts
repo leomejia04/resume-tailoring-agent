@@ -309,7 +309,7 @@ export const regenerateEntry = (runId: string, entryRef: string, expectedVersion
   })
 
 export const chatRevision = (runId: string, message: string, expectedVersion: number) =>
-  apiRequest<{ reply: string; new_version: number | null; run: RunOut }>(`${runPath(runId)}/draft/chat`, {
+  apiRequest<RunOut>(`${runPath(runId)}/draft/chat`, {
     method: 'POST',
     body: { message, expected_version: expectedVersion },
     timeoutMs: AI_TIMEOUT_MS,

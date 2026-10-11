@@ -66,7 +66,7 @@ def drafted(app, docx_bytes, prefix="JordanExample"):
 
 def render(account):
     response = account.client.post(f"{account.run_url}/render")
-    assert response.status_code == 201, response.text
+    assert response.status_code == 202, response.text
     return response.json()
 
 
@@ -260,7 +260,7 @@ def test_regenerate_and_chat_revisions(monkeypatch, base_settings, docx_bytes):
         f"{account.run_url}/draft/regenerate",
         json={"entry_ref": entry["ref"], "expected_version": version},
     )
-    assert regenerated.status_code == 200, regenerated.text
+    assert regenerated.status_code == 202, regenerated.text
     body = regenerated.json()
     assert body["draft"]["version"] == version + 1 and body["draft"]["created_by"] == "generation"
     assert [e["ref"] for e in body["draft"]["content"]["entries"]] == [
@@ -271,8 +271,9 @@ def test_regenerate_and_chat_revisions(monkeypatch, base_settings, docx_bytes):
         f"{account.run_url}/draft/chat",
         json={"message": "Make it shorter", "expected_version": version + 1},
     )
-    assert demo_chat.status_code == 200 and demo_chat.json()["new_version"] is None
-    assert "Demo mode" in demo_chat.json()["reply"]
+    assert demo_chat.status_code == 202
+    assert demo_chat.json()["draft"]["version"] == version + 1  # nothing changed
+    assert "Demo mode" in account.client.get(f"{account.run_url}/chat").json()[-1]["content"]
 
     class ChatClient:
         provider = "openai"
@@ -310,16 +311,18 @@ def test_regenerate_and_chat_revisions(monkeypatch, base_settings, docx_bytes):
                 model=self.model,
             )
 
-    monkeypatch.setattr("app.api.v1.tailoring_routes.client_for", lambda settings: ChatClient())
+    monkeypatch.setattr("app.ai.client.client_for", lambda settings: ChatClient())
     chat = account.client.post(
         f"{account.run_url}/draft/chat",
         json={"message": "Emphasize SQL", "expected_version": version + 1},
     )
-    assert chat.status_code == 200, chat.text
+    assert chat.status_code == 202, chat.text
     result = chat.json()
-    assert result["new_version"] == version + 2
-    assert "not supported" in result["reply"]
-    text = str(result["run"]["draft"]["content"])
+    assert result["draft"]["version"] == version + 2
+    chat_job = next(j for j in result["jobs"] if j["kind"] == "chat")
+    assert chat_job["status"] == "succeeded" and chat_job["result"]["new_version"] == version + 2
+    assert "not supported" in account.client.get(f"{account.run_url}/chat").json()[-1]["content"]
+    text = str(result["draft"]["content"])
     assert "60%" not in text and "Snowflake" not in text
     history = account.client.get(f"{account.run_url}/chat").json()
     assert [m["role"] for m in history] == ["user", "assistant", "user", "assistant"]

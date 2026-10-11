@@ -3,7 +3,10 @@
 Each step uses short database transactions and never holds one open during a
 model call: reserve budget and record the new state, commit, call the model,
 then settle cost and store results in a new transaction. Run states and legal
-transitions are explicit so a durable worker (milestone 6) can resume them.
+transitions are explicit, and the steps run in the durable worker (ADR 0007):
+requests create runs and queue jobs; ``analyze_run`` and ``generate_draft``
+resume safely when a crashed attempt is retried. Errors propagate to the job
+runner, which decides between a bounded retry and marking the run failed.
 """
 
 from __future__ import annotations
@@ -43,12 +46,13 @@ from app.db.models import (
     TailoringRun,
 )
 from app.documents.extract import find_metrics, plain_text
+from app.jobs import queue
 from app.render.format import FormatPreferences
 from app.storage import (
+    SignedObject,
     StorageObjectMissingError,
     StorageRejectedError,
     StorageUnavailableError,
-    UserStorage,
 )
 from app.tailoring.analysis import find_gaps, normalize_analysis, question_for
 from app.tailoring.context import build_context, draft_payload
@@ -59,11 +63,13 @@ logger = logging.getLogger("app.tailoring")
 T = TypeVar("T", bound=BaseModel)
 
 TRANSITIONS: dict[str, set[str]] = {
+    "queued": {"analyzing", "failed", "cancelled"},
     "analyzing": {"awaiting_confirmation", "ready", "failed", "cancelled"},
     "awaiting_confirmation": {"ready", "drafting", "cancelled"},
     "ready": {"drafting", "cancelled"},
     "drafting": {"validating", "failed", "cancelled"},
-    "validating": {"awaiting_review", "failed"},
+    # A retried draft job resumes from validating if the last attempt crashed there.
+    "validating": {"awaiting_review", "drafting", "failed", "cancelled"},
     "awaiting_review": {"drafting", "approved", "cancelled"},
     # A new draft version after approval returns to review; drafting again is allowed.
     "approved": {"drafting", "awaiting_review", "cancelled"},
@@ -198,11 +204,12 @@ def call_model[T: BaseModel](
     return result
 
 
-def _fail(settings: Settings, user: VerifiedUser, run_id: uuid.UUID, code: str) -> None:
+def fail_run(settings: Settings, user: VerifiedUser, run_id: uuid.UUID, code: str) -> None:
+    """Mark a run failed after its job gave up (no-op if the run moved on or was cancelled)."""
     with user_db(settings, user) as db:
         run = _owned_run(db, user, run_id)
         if "failed" in TRANSITIONS[run.status]:
-            transition(db, run, "failed", code)
+            transition(db, run, "failed", code[:64])
 
 
 # --- Jobs ----------------------------------------------------------------------
@@ -294,61 +301,78 @@ def _ensure_analysis(
         return analysis
 
 
-def start_run(
+def create_run(
+    db: Session,
+    user: VerifiedUser,
+    posting_id: uuid.UUID,
+    master_version_id: uuid.UUID | None,
+) -> TailoringRun:
+    """Request side: a queued run for the posting's current version (analysis is a job)."""
+    posting = db.scalars(
+        select(JobPosting).where(JobPosting.id == posting_id, JobPosting.owner_id == user.id)
+    ).first()
+    if posting is None:
+        raise _not_found("That job posting")
+    if (
+        master_version_id is not None
+        and db.scalar(
+            select(MasterVersion.id).where(
+                MasterVersion.id == master_version_id, MasterVersion.owner_id == user.id
+            )
+        )
+        is None
+    ):
+        raise _not_found("That resume version")
+    version_id = db.scalars(
+        select(JobPostingVersion.id).where(
+            JobPostingVersion.posting_id == posting.id,
+            JobPostingVersion.owner_id == user.id,
+            JobPostingVersion.version == posting.current_version,
+        )
+    ).one()
+    run = TailoringRun(
+        id=uuid.uuid4(),
+        owner_id=user.id,
+        posting_version_id=version_id,
+        master_version_id=master_version_id,
+        status="queued",
+    )
+    db.add(run)
+    db.flush()
+    return run
+
+
+def analyze_run(
     settings: Settings,
     user: VerifiedUser,
     client: LLMClient,
-    posting_id: uuid.UUID,
-    master_version_id: uuid.UUID | None,
-) -> uuid.UUID:
+    run_id: uuid.UUID,
+    master_grant: queue.Grant | None = None,
+) -> str:
+    """Worker side: analyze the posting, ask about gaps, and score the master baseline."""
     with user_db(settings, user) as db:
+        run = _owned_run(db, user, run_id)
+        if run.status == "queued":
+            transition(db, run, "analyzing")
+        elif run.status != "analyzing":  # "analyzing" means a crashed attempt is resuming
+            raise ApiError(409, "invalid_state", "This run is not waiting for analysis.")
         posting = db.scalars(
-            select(JobPosting).where(JobPosting.id == posting_id, JobPosting.owner_id == user.id)
-        ).first()
-        if posting is None:
-            raise _not_found("That job posting")
-        if (
-            master_version_id is not None
-            and db.scalar(
-                select(MasterVersion.id).where(
-                    MasterVersion.id == master_version_id, MasterVersion.owner_id == user.id
-                )
-            )
-            is None
-        ):
-            raise _not_found("That resume version")
-        version = db.scalars(
-            select(JobPostingVersion).where(
-                JobPostingVersion.posting_id == posting.id,
-                JobPostingVersion.owner_id == user.id,
-                JobPostingVersion.version == posting.current_version,
-            )
+            select(JobPosting)
+            .join(JobPostingVersion, JobPostingVersion.posting_id == JobPosting.id)
+            .where(JobPostingVersion.id == run.posting_version_id)
         ).one()
-        run = TailoringRun(
-            id=uuid.uuid4(),
-            owner_id=user.id,
-            posting_version_id=version.id,
-            master_version_id=master_version_id,
-            status="analyzing",
-        )
-        db.add(run)
-        db.flush()
-        run_id = run.id
+        version = db.scalars(
+            select(JobPostingVersion).where(JobPostingVersion.id == run.posting_version_id)
+        ).one()
         db.expunge(posting)
         db.expunge(version)
 
-    try:
-        analysis = _ensure_analysis(settings, user, client, run_id, posting, version)
-    except LLMError as exc:
-        _fail(settings, user, run_id, f"analysis_{exc.code}")
-        return run_id
-    except ApiError as exc:  # e.g. spending limit reached: never leave the run "analyzing"
-        _fail(settings, user, run_id, f"analysis_{exc.code}")
-        raise
-
+    analysis = _ensure_analysis(settings, user, client, run_id, posting, version)
     content = AnalysisContent.model_validate(analysis.content)
     with user_db(settings, user) as db:
         run = _owned_run(db, user, run_id)
+        if run.status != "analyzing":  # cancelled while the model was answering
+            raise ApiError(409, "invalid_state", "This run changed while it was analyzed.")
         db.execute(
             update(TailoringRun).where(TailoringRun.id == run_id).values(analysis_id=analysis.id)
         )
@@ -376,15 +400,20 @@ def start_run(
                 )
             )
         transition(db, run, "awaiting_confirmation" if gaps else "ready")
-    ensure_baseline(settings, user, run_id)
-    return run_id
+        status = run.status
+    ensure_baseline(settings, user, run_id, master_grant)
+    return status
 
 
-def ensure_baseline(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) -> None:
+def ensure_baseline(
+    settings: Settings, user: VerifiedUser, run_id: uuid.UUID, master_grant: queue.Grant | None
+) -> None:
     """Score the run's master once, as the baseline to compare drafts with.
 
-    Informational only: a storage or parsing problem is stored as a failed
-    report (shown with a retry), never as a failed run.
+    Reads the master through the job's signed URL, and only if that URL is for
+    the master the run uses now. Informational only: a storage or parsing
+    problem is stored as a failed report (shown with a retry), never as a
+    failed run.
     """
     with user_db(settings, user) as db:
         run = _owned_run(db, user, run_id)
@@ -393,13 +422,15 @@ def ensure_baseline(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) -
         if (
             inputs is None
             or master is None
+            or master_grant is None
+            or master_grant.object_path != master.storage_path
             or not reports.needs_check(db, run, "master_baseline", master.id)
         ):
             return
-        path, kind, master_id = master.storage_path, master.file_kind, master.id
+        kind, master_id = master.file_kind, master.id
     text, error = None, None
     try:
-        text = plain_text(UserStorage(settings, user.access_token).download(path), kind)
+        text = plain_text(SignedObject(settings, master_grant.url).download(), kind)
     except (StorageUnavailableError, StorageRejectedError, StorageObjectMissingError):
         error = "storage_unavailable"
     except Exception as exc:  # an upload that passed validation but cannot be re-read
@@ -516,7 +547,7 @@ def answer_question(
 
 def generate_draft(
     settings: Settings, user: VerifiedUser, client: LLMClient, run_id: uuid.UUID
-) -> None:
+) -> int:
     with user_db(settings, user) as db:
         run = _owned_run(db, user, run_id)
         if run.analysis_id is None:
@@ -534,7 +565,8 @@ def generate_draft(
             .join(JobPostingVersion, JobPostingVersion.posting_id == JobPosting.id)
             .where(JobPostingVersion.id == run.posting_version_id)
         ).one()
-        transition(db, run, "drafting")
+        if run.status != "drafting":  # "drafting": a crashed attempt is resuming
+            transition(db, run, "drafting")
 
     payload = draft_payload(context, analysis, posting.title, posting.company)
     common = {
@@ -543,44 +575,37 @@ def generate_draft(
         "schema": TailoredDraftOut,
         "max_output_tokens": settings.draft_max_output_tokens,
     }
-    try:
+    result = call_model(
+        settings,
+        user,
+        client,
+        operation="draft",
+        instructions=prompts.TAILOR_INSTRUCTIONS,
+        payload=payload,
+        **common,
+    )
+    output = result.output
+    checked = check(output, context, analysis)
+    repaired = False
+    errors = [i for i in checked.issues if i.severity == "error"]
+    if errors:  # one bounded repair attempt, then remove whatever still fails
+        repair_payload = {
+            **payload,
+            "previous_draft": output.model_dump(),
+            "problems": [i.model_dump() for i in errors][:50],
+        }
         result = call_model(
             settings,
             user,
             client,
-            operation="draft",
-            instructions=prompts.TAILOR_INSTRUCTIONS,
-            payload=payload,
+            operation="draft_repair",
+            instructions=prompts.TAILOR_INSTRUCTIONS + prompts.REPAIR_SUFFIX,
+            payload=repair_payload,
             **common,
         )
         output = result.output
         checked = check(output, context, analysis)
-        repaired = False
-        errors = [i for i in checked.issues if i.severity == "error"]
-        if errors:  # one bounded repair attempt, then remove whatever still fails
-            repair_payload = {
-                **payload,
-                "previous_draft": output.model_dump(),
-                "problems": [i.model_dump() for i in errors][:50],
-            }
-            result = call_model(
-                settings,
-                user,
-                client,
-                operation="draft_repair",
-                instructions=prompts.TAILOR_INSTRUCTIONS + prompts.REPAIR_SUFFIX,
-                payload=repair_payload,
-                **common,
-            )
-            output = result.output
-            checked = check(output, context, analysis)
-            repaired = True
-    except LLMError as exc:
-        _fail(settings, user, run_id, f"draft_{exc.code}")
-        return
-    except ApiError:
-        _fail(settings, user, run_id, "draft_budget_exceeded")
-        raise
+        repaired = True
 
     content, report = finalize(output, context, analysis, checked, repaired)
     with user_db(settings, user) as db:
@@ -619,9 +644,11 @@ def generate_draft(
         if inputs is not None:
             reports.record_draft(db, inputs, version_id, content)
         transition(db, run, "awaiting_review")
+        return number
 
 
 def cancel_run(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) -> None:
     with user_db(settings, user) as db:
         run = _owned_run(db, user, run_id)
         transition(db, run, "cancelled")
+        queue.cancel_for_run(db, run_id)

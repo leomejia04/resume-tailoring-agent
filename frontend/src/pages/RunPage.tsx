@@ -10,8 +10,10 @@ import { DraftEditor } from './run/DraftEditor'
 import { ExportPanel } from './run/ExportPanel'
 import { ChatPanel, FormatPanel } from './run/RevisePanel'
 import { VersionHistory } from './run/VersionHistory'
+import { anyActive, isActive, jobOf, POLL_MS, progress } from './run/jobs'
 
 const STATUS_LABELS: Record<RunStatus, string> = {
+  queued: 'Waiting to start',
   analyzing: 'Reading the posting',
   awaiting_confirmation: 'Questions for you',
   ready: 'Ready to draft',
@@ -42,6 +44,7 @@ function failureMessage(code: string | null): string {
   if (code.endsWith('budget_exceeded')) return 'Your daily AI spending limit was reached. Try again tomorrow.'
   if (code.endsWith('timeout')) return 'The AI took too long to answer. Try again.'
   if (code.endsWith('rate_limited')) return 'The AI service is busy. Wait a minute and try again.'
+  if (code.endsWith('lease_expired') || code === 'interrupted') return 'This step was interrupted. You can start it again.'
   return 'The AI step failed. You can try again; nothing was changed.'
 }
 
@@ -222,9 +225,13 @@ export function RunPage() {
   const focusDraftRef = useRef(false)
 
   useEffect(() => {
-    if (focusDraftRef.current && run?.draft) {
+    if (!focusDraftRef.current || !run) return
+    const job = jobOf(run, 'draft')
+    if (job?.status === 'succeeded' && run.draft) {
       focusDraftRef.current = false
       draftHeadingRef.current?.focus()
+    } else if (job && !isActive(job)) {
+      focusDraftRef.current = false
     }
   }, [run])
 
@@ -259,13 +266,25 @@ export function RunPage() {
     return () => controller.abort()
   }, [load])
 
+  // Background jobs report progress through the run: re-read it while one is active.
+  const polling = run !== null && anyActive(run)
+  useEffect(() => {
+    if (!polling) return
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => load(controller.signal), POLL_MS)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [run, polling, load])
+
   async function draft() {
     if (busy) return
     setBusy('draft')
     setError(null)
     try {
       const updated = await generateDraft(runId)
-      focusDraftRef.current = updated.draft !== null
+      focusDraftRef.current = true // once the queued draft job finishes
       setRun(updated)
     } catch (err) {
       setError(messageOf(err))
@@ -298,7 +317,10 @@ export function RunPage() {
   }
 
   const openQuestions = run.questions.filter((q) => q.status === 'open').length
-  const canDraft = DRAFTABLE.includes(run.status) && run.analysis !== null
+  const draftJob = jobOf(run, 'draft')
+  const analyzing = isActive(jobOf(run, 'analyze'))
+  const drafting = isActive(draftJob)
+  const canDraft = DRAFTABLE.includes(run.status) && run.analysis !== null && !drafting
   return (
     <div className="space-y-8" aria-busy={busy !== null}>
       <div>
@@ -313,6 +335,16 @@ export function RunPage() {
         </h1>
         <p role="status" className="mt-1 text-slate-700">
           Status: <span className="font-medium">{STATUS_LABELS[run.status]}</span>
+          {analyzing && (
+            <span>
+              {' '}
+              ·{' '}
+              {progress(
+                jobOf(run, 'analyze'),
+                run.status === 'queued' || run.status === 'analyzing' ? 'Reading the posting…' : 'Checking your master resume…',
+              )}
+            </span>
+          )}
         </p>
       </div>
       <AIBadge status={ai} />
@@ -376,7 +408,11 @@ export function RunPage() {
             disabled={!canDraft}
             className="rounded-md bg-indigo-700 px-4 py-2 font-medium text-white aria-disabled:opacity-60"
           >
-            {busy === 'draft' ? 'Drafting… this can take a minute' : run.draft ? 'Draft again' : 'Generate draft'}
+            {busy === 'draft' || drafting
+              ? progress(draftJob, 'Drafting… this can take a minute')
+              : run.draft
+                ? 'Draft again'
+                : 'Generate draft'}
           </button>
           {openQuestions > 0 && canDraft && (
             <p className="text-sm text-slate-600">{openQuestions} unanswered questions will be treated as gaps.</p>

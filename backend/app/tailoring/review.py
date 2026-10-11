@@ -6,6 +6,10 @@ and chat revisions pass the same deterministic checks as generation. Approval
 binds one version to the SHA-256 of its rendered PDF; any later version is
 unapproved until approved again. Every new version and every rendered PDF gets
 an ATS report, and approval requires a complete report for that exact PDF.
+
+Model calls, rendering, and file-based checks run in the durable worker
+(ADR 0007). They read and write private files only through the signed URLs
+their job was granted, never with a session or service key.
 """
 
 from __future__ import annotations
@@ -21,7 +25,7 @@ from sqlalchemy import and_, select, update
 from sqlalchemy.orm import Session
 
 from app.ai import prompts
-from app.ai.client import LLMClient, LLMError
+from app.ai.client import LLMClient
 from app.ai.schemas import ChatPatchOut, EntryOut, TailoredDraftOut
 from app.api.errors import ApiError
 from app.ats import reports
@@ -42,9 +46,9 @@ from app.db.models import (
     Profile,
     TailoringRun,
 )
-from app.documents.convert import ConversionError, ConversionUnavailableError
 from app.documents.extract import extract_docx, extract_pdf
 from app.documents.pdf_inspect import pdf_text
+from app.jobs import queue
 from app.render.filename import download_filename
 from app.render.format import FormatPreferences
 from app.render.pipeline import render_draft
@@ -53,6 +57,7 @@ from app.render.template_docx import FactLocation
 from app.schemas.ats import ShownStatus
 from app.schemas.errors import FieldError
 from app.storage import (
+    SignedObject,
     StorageObjectMissingError,
     StorageRejectedError,
     StorageUnavailableError,
@@ -595,23 +600,19 @@ def regenerate_entry(
     payload = draft_payload(context, analysis, posting.title, posting.company)
     payload["entries"] = [e for e in payload["entries"] if e["ref"] == group_ref]
     payload["unattached_facts"] = []
-    try:
-        result = call_model(
-            settings,
-            user,
-            client,
-            run_id=run_id,
-            operation="regenerate",
-            prompt_version=prompts.REGENERATE_VERSION,
-            instructions=prompts.TAILOR_INSTRUCTIONS + prompts.REGENERATE_SUFFIX,
-            payload=payload,
-            schema=TailoredDraftOut,
-            max_output_tokens=settings.draft_max_output_tokens,
-        )
-    except LLMError as exc:
-        raise ApiError(
-            503, f"ai_{exc.code}", "The AI could not rewrite this section. Try again."
-        ) from exc
+    # Model errors propagate: the job runner retries timeouts and rate limits.
+    result = call_model(
+        settings,
+        user,
+        client,
+        run_id=run_id,
+        operation="regenerate",
+        prompt_version=prompts.REGENERATE_VERSION,
+        instructions=prompts.TAILOR_INSTRUCTIONS + prompts.REGENERATE_SUFFIX,
+        payload=payload,
+        schema=TailoredDraftOut,
+        max_output_tokens=settings.draft_max_output_tokens,
+    )
     entries = [e for e in result.output.entries if e.entry_ref == group_ref][:1]
     merged, report = _merge_entries(keyed, entries, context, analysis, None, None, False)
     merged = _from_context_refs(merged, back)
@@ -656,30 +657,24 @@ def chat_revision(
             .join(JobPostingVersion, JobPostingVersion.posting_id == JobPosting.id)
             .where(JobPostingVersion.id == run.posting_version_id)
         ).one()
-        db.add(ChatMessage(owner_id=user.id, run_id=run_id, role="user", content=message))
     # Send the draft keyed by the current context refs (the model cites those).
     keyed, back = _to_context_refs(content, context)
     aliased = _alias_draft(keyed, context)
     payload = draft_payload(context, analysis, posting.title, posting.company)
     payload["current_draft"] = aliased
     payload["instruction"] = message
-    try:
-        result = call_model(
-            settings,
-            user,
-            client,
-            run_id=run_id,
-            operation="chat",
-            prompt_version=prompts.CHAT_VERSION,
-            instructions=prompts.CHAT_INSTRUCTIONS,
-            payload=payload,
-            schema=ChatPatchOut,
-            max_output_tokens=settings.draft_max_output_tokens,
-        )
-    except LLMError as exc:
-        raise ApiError(
-            503, f"ai_{exc.code}", "The AI could not revise the draft. Try again."
-        ) from exc
+    result = call_model(
+        settings,
+        user,
+        client,
+        run_id=run_id,
+        operation="chat",
+        prompt_version=prompts.CHAT_VERSION,
+        instructions=prompts.CHAT_INSTRUCTIONS,
+        payload=payload,
+        schema=ChatPatchOut,
+        max_output_tokens=settings.draft_max_output_tokens,
+    )
     patch = result.output
     reply = re.sub(r"\s+", " ", patch.reply or "").strip()[:500] or "Done."
     changed = bool(patch.entries) or patch.headline is not None or patch.change_summary
@@ -738,10 +733,34 @@ def _prefix(profile: Profile | None) -> str | None:
     return None
 
 
-def render_current(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) -> uuid.UUID:
+def render_version(
+    settings: Settings,
+    user: VerifiedUser,
+    run_id: uuid.UUID,
+    version_number: int,
+    artifact_id: uuid.UUID,
+    master_grant: queue.Grant | None,
+    pdf_grant: queue.Grant,
+    docx_grant: queue.Grant,
+) -> uuid.UUID:
+    """Worker side: render one draft version to the PDF the user will review and approve."""
     with user_db(settings, user) as db:
         run = _owned_run(db, user, run_id)
-        draft, version, content = _draft_state(db, user, run)
+        draft = db.scalars(
+            select(Draft).where(Draft.run_id == run.id, Draft.owner_id == user.id)
+        ).first()
+        version = (
+            db.scalars(
+                select(DraftVersion).where(
+                    DraftVersion.draft_id == draft.id, DraftVersion.version == version_number
+                )
+            ).first()
+            if draft
+            else None
+        )
+        if version is None:
+            raise ApiError(404, "not_found", "That draft version was not found.")
+        content = DraftContent.model_validate(version.content)
         inputs = reports.scoring_inputs(db, run)
         master = run_master(db, user, run)
         rows = db.execute(
@@ -761,9 +780,12 @@ def render_current(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) ->
             .join(JobPostingVersion, JobPostingVersion.posting_id == JobPosting.id)
             .where(JobPostingVersion.id == run.posting_version_id)
         ).one()
-        version_id, version_number = version.id, version.version
+        version_id = version.id
         master_info = (master.storage_path, master.file_kind, master.id) if master else None
         filename = download_filename(_prefix(profile), posting.title, posting.company)
+    if master_info and (master_grant is None or master_grant.object_path != master_info[0]):
+        # The run's master changed after this job was queued; never fall back silently.
+        raise ApiError(409, "master_changed", "Your master resume changed. Create the PDF again.")
 
     facts = {
         record.id: FactLocation(
@@ -780,67 +802,53 @@ def render_current(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) ->
         if ev.verification_status == "verified" and ev.section == "education"
     ]
     master_bytes, header = None, []
-    try:
-        if master_info:
-            master_bytes = UserStorage(settings, user.access_token).download(master_info[0])
-            extraction = (
-                extract_docx(master_bytes)
-                if master_info[1] == "docx"
-                else extract_pdf(master_bytes)
-            )
-            header = extraction.header_lines
-        outcome = render_draft(
-            master=master_bytes,
-            master_kind=master_info[1] if master_info else None,
-            header_lines=header,
-            content=content,
-            facts=facts,
-            prefs=content.format,
-            extras=extras,
+    if master_info and master_grant:
+        master_bytes = SignedObject(settings, master_grant.url).download()
+        extraction = (
+            extract_docx(master_bytes) if master_info[1] == "docx" else extract_pdf(master_bytes)
         )
-    except (ConversionUnavailableError, ConversionError) as exc:
-        logger.error("render failed run_id=%s", run_id)
-        raise unavailable("PDF rendering") from exc
-    except (StorageUnavailableError, StorageRejectedError, StorageObjectMissingError) as exc:
-        raise unavailable("File storage") from exc
+        header = extraction.header_lines
+    outcome = render_draft(
+        master=master_bytes,
+        master_kind=master_info[1] if master_info else None,
+        header_lines=header,
+        content=content,
+        facts=facts,
+        prefs=content.format,
+        extras=extras,
+    )
 
     sha = hashlib.sha256(outcome.pdf).hexdigest()
-    artifact_id = uuid.uuid4()
-    base = f"{user.id}/{version_id}/{artifact_id}"
-    storage = UserStorage(settings, user.access_token, settings.artifacts_bucket)
-    try:
-        with user_db(settings, user) as db:
-            db.add(
-                Artifact(
-                    id=artifact_id,
-                    owner_id=user.id,
-                    draft_version_id=version_id,
-                    storage_path=f"{base}.pdf",
-                    docx_storage_path=f"{base}.docx",
-                    sha256=sha,
-                    size_bytes=len(outcome.pdf),
-                    page_count=outcome.checks.page_count,
-                    layout=outcome.checks.layout,
-                    checks=outcome.checks.model_dump(mode="json")
-                    | {
-                        "draft_version": version_number,
-                        "rendered_bullets": sum(len(e.bullets) for e in outcome.content.entries),
-                    },
-                    passed=outcome.checks.passed,
-                    filename=filename,
-                )
+    with user_db(settings, user) as db:
+        db.add(
+            Artifact(
+                id=artifact_id,
+                owner_id=user.id,
+                draft_version_id=version_id,
+                storage_path=pdf_grant.object_path,
+                docx_storage_path=docx_grant.object_path,
+                sha256=sha,
+                size_bytes=len(outcome.pdf),
+                page_count=outcome.checks.page_count,
+                layout=outcome.checks.layout,
+                checks=outcome.checks.model_dump(mode="json")
+                | {
+                    "draft_version": version_number,
+                    "rendered_bullets": sum(len(e.bullets) for e in outcome.content.entries),
+                },
+                passed=outcome.checks.passed,
+                filename=filename,
             )
-            db.flush()
-            if inputs is not None:  # the ATS check of this exact PDF
-                reports.record_pdf(db, inputs, artifact_id, outcome.content, outcome.pdf_text)
-            storage.upload(f"{base}.pdf", outcome.pdf, "application/pdf")
-            storage.upload(
-                f"{base}.docx",
-                outcome.docx,
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            )
-    except (StorageUnavailableError, StorageRejectedError) as exc:
-        raise unavailable("File storage") from exc
+        )
+        db.flush()
+        if inputs is not None:  # the ATS check of this exact PDF
+            reports.record_pdf(db, inputs, artifact_id, outcome.content, outcome.pdf_text)
+        # Uploads go last, inside the transaction: if either fails, no artifact row exists.
+        SignedObject(settings, pdf_grant.url).upload(outcome.pdf, "application/pdf")
+        SignedObject(settings, docx_grant.url).upload(
+            outcome.docx,
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
     return artifact_id
 
 
@@ -894,17 +902,23 @@ def approve(
         return approval.id
 
 
-def run_checks(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) -> None:
-    """Check the run's current master, draft version, and PDF where no current report exists.
+def run_checks(
+    settings: Settings,
+    user: VerifiedUser,
+    run_id: uuid.UUID,
+    master_grant: queue.Grant | None,
+    artifact_grant: queue.Grant | None,
+) -> None:
+    """Worker side: check the run's current master, draft version, and PDF where no
+    current report exists (retry after a failure, or re-check after a rubric upgrade).
 
-    Used to retry a failed check or to re-check after a rubric upgrade. Existing
-    complete reports are kept; nothing is scored twice.
+    Existing complete reports are kept; nothing is scored twice.
     """
     with user_db(settings, user) as db:
         run = _owned_run(db, user, run_id)
         if run.analysis_id is None:
             raise ApiError(409, "invalid_state", "Analyze the job posting first.")
-    ensure_baseline(settings, user, run_id)
+    ensure_baseline(settings, user, run_id, master_grant)
     with user_db(settings, user) as db:
         run = _owned_run(db, user, run_id)
         inputs = reports.scoring_inputs(db, run)
@@ -916,18 +930,25 @@ def run_checks(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) -> Non
         _, version, content = _draft_state(db, user, run)
         if reports.needs_check(db, run, "draft", version.id):
             reports.record_draft(db, inputs, version.id, content)
-        artifact_id = db.scalar(
-            select(Artifact.id)
+        artifact = db.scalars(
+            select(Artifact)
             .where(Artifact.draft_version_id == version.id, Artifact.owner_id == user.id)
             .order_by(Artifact.created_at.desc())
-        )
-        if artifact_id is None or not reports.needs_check(db, run, "final_pdf", artifact_id):
+        ).first()
+        if artifact is None or not reports.needs_check(db, run, "final_pdf", artifact.id):
             return
+        artifact_id, path, expected_sha = artifact.id, artifact.storage_path, artifact.sha256
     text, error = None, None
+    if artifact_grant is None or artifact_grant.object_path != path:
+        return  # this job was not granted that PDF (it is newer than the request)
     try:
-        data, _ = artifact_bytes(settings, user, artifact_id)  # hash-verified bytes
-        text = pdf_text(data)
-    except ApiError:
+        data = SignedObject(settings, artifact_grant.url).download()
+        if hashlib.sha256(data).hexdigest() != expected_sha:
+            logger.error("artifact hash mismatch artifact_id=%s", artifact_id)
+            error = "storage_unavailable"
+        else:
+            text = pdf_text(data)
+    except (StorageUnavailableError, StorageRejectedError):
         error = "storage_unavailable"
     with user_db(settings, user) as db:
         reports.record_pdf(db, inputs, artifact_id, content, text, error)

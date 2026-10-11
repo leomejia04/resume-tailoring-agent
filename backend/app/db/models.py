@@ -42,6 +42,7 @@ VERIFICATION_STATUSES = ("unverified", "verified", "rejected")
 EVIDENCE_ORIGINS = ("master", "confirmation")
 CHANGE_SOURCES = ("extracted", "user", "confirmation")
 RUN_STATUSES = (
+    "queued",
     "analyzing",
     "awaiting_confirmation",
     "ready",
@@ -57,6 +58,11 @@ DRAFT_SOURCES = ("generation", "repair", "edit", "chat")
 ATS_REPORT_KINDS = ("master_baseline", "draft", "final_pdf")
 # "stale" is never stored: it is derived when a report no longer matches the run.
 ATS_REPORT_STATUSES = ("pending", "complete", "failed")
+JOB_KINDS = ("analyze", "draft", "regenerate", "chat", "render", "ats_check")
+# At most one active job per run and lane: workflow jobs change the run or its draft.
+JOB_LANES = ("workflow", "render", "ats")
+JOB_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
+GRANT_PURPOSES = ("master_read", "artifact_read", "pdf_upload", "docx_upload")
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -597,6 +603,118 @@ class AtsReport(Base):
     analysis_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     error_code: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = _created_at()
+
+
+# --- Milestone 6c: durable jobs, storage grants, budget reservations -----------
+
+
+class Job(Base):
+    """Durable background work for one run (ADR 0007).
+
+    Queued by a request, claimed by a worker with a renewable lease, retried a
+    bounded number of times, and finished as succeeded, failed, or cancelled.
+    Cross-owner queue access happens only through ``app_queue`` functions.
+    """
+
+    __tablename__ = "jobs"
+    __table_args__ = (
+        UniqueConstraint("id", "owner_id", name="uq_jobs_id_owner"),
+        _owner_fk(["run_id", "owner_id"], "tailoring_runs", "fk_jobs_run_owner"),
+        CheckConstraint(_in("kind", JOB_KINDS), name="kind"),
+        CheckConstraint(_in("lane", JOB_LANES), name="lane"),
+        CheckConstraint(_in("status", JOB_STATUSES), name="status"),
+        CheckConstraint("max_attempts BETWEEN 1 AND 5", name="max_attempts_range"),
+        CheckConstraint("attempts BETWEEN 0 AND max_attempts", name="attempts_bounded"),
+        CheckConstraint(
+            "(status = 'running') = (lease_expires_at IS NOT NULL AND locked_by IS NOT NULL)",
+            name="lease_iff_running",
+        ),
+        CheckConstraint("status <> 'failed' OR error_code IS NOT NULL", name="failed_has_code"),
+        Index(
+            "uq_jobs_active_lane",
+            "run_id",
+            "lane",
+            unique=True,
+            postgresql_where=text("status IN ('queued', 'running')"),
+        ),
+        Index(
+            "ix_jobs_claim", "run_after", "created_at", postgresql_where=text("status = 'queued'")
+        ),
+        Index("ix_jobs_lease", "lease_expires_at", postgresql_where=text("status = 'running'")),
+        Index("ix_jobs_owner_status", "owner_id", "status"),
+        Index("ix_jobs_run_created", "run_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    lane: Mapped[str] = mapped_column(String(16), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="queued")
+    # Small, validated inputs (IDs and versions); never file contents or secrets.
+    params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="3")
+    run_after: Mapped[datetime] = _created_at()
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    locked_by: Mapped[str | None] = mapped_column(String(64))
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancel_requested: Mapped[bool] = mapped_column(nullable=False, server_default="false")
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = _created_at()
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class JobGrant(Base):
+    """A short-lived signed URL for exactly one storage object a job may read or write.
+
+    Created in the request with the user's own session, so Storage policies
+    decide what may be signed. It is a capability: never logged, never
+    returned by the API, and deleted when the job finishes.
+    """
+
+    __tablename__ = "job_grants"
+    __table_args__ = (
+        _owner_fk(["job_id", "owner_id"], "jobs", "fk_job_grants_job_owner"),
+        CheckConstraint(_in("purpose", GRANT_PURPOSES), name="purpose"),
+        CheckConstraint("attempt BETWEEN 0 AND 5", name="attempt_range"),
+        CheckConstraint("url LIKE '/object/%'", name="relative_url"),
+        UniqueConstraint("job_id", "purpose", "attempt", name="uq_job_grants_job_purpose_attempt"),
+        Index("ix_job_grants_expires", "expires_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False)
+    # 0 for reads; uploads are per attempt because signed uploads never overwrite.
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    object_path: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Relative to the Storage API base (the worker prefixes its own SUPABASE_URL).
+    url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class BudgetReservation(Base):
+    """One in-flight worst-case reservation. Deleted when settled or released;
+    expired rows (a crash mid-call) are returned to the daily counters by the worker."""
+
+    __tablename__ = "budget_reservations"
+    __table_args__ = (
+        CheckConstraint("amount_usd >= 0", name="amount_nonnegative"),
+        Index("ix_budget_reservations_expires", "expires_at"),
+        Index("ix_budget_reservations_owner", "owner_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)
+    amount_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class ChatMessage(Base):

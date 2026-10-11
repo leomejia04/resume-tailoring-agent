@@ -6,6 +6,7 @@ import type { ApprovalOut, RunStatus, RunSummary } from '../api/types'
 import { Alert } from '../components/Alert'
 
 const STATUS_LABELS: Record<RunStatus, string> = {
+  queued: 'Waiting to start',
   analyzing: 'Reading the posting',
   awaiting_confirmation: 'Questions for you',
   ready: 'Ready to draft',

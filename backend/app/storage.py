@@ -3,11 +3,16 @@
 Requests carry the signed-in user's own access token (never the service
 role key), so Storage's row-level security policies independently enforce
 that users can only touch objects under their own ``<user_id>/`` folder.
+
+Background jobs have no user session. Instead, the request signs URLs for
+exactly the objects a job needs (``sign_download``/``sign_upload``, authorized
+by the same policies), and the worker uses them through ``SignedObject``,
+which holds no credentials at all.
 """
 
 from __future__ import annotations
 
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -55,6 +60,31 @@ class UserStorage:
         if response.status_code >= 400:
             raise StorageRejectedError(response.status_code)
 
+    def sign_download(self, path: str, expires_in: int) -> str:
+        """A relative signed URL that can read one existing object until it expires."""
+        url = f"{self._base}/sign/{self._bucket}/{quote(path)}"
+        body = self._post_json(url, {"expiresIn": expires_in})
+        return _relative(body.get("signedURL"))
+
+    def sign_upload(self, path: str) -> str:
+        """A relative signed URL that can create one new object (never overwrite)."""
+        body = self._post_json(f"{self._base}/upload/sign/{self._bucket}/{quote(path)}", None)
+        return _relative(body.get("url"))
+
+    def _post_json(self, url: str, payload: dict | None) -> dict:
+        try:
+            with httpx.Client(timeout=_TIMEOUT) as client:
+                response = client.post(url, json=payload, headers=self._headers)
+        except httpx.HTTPError as exc:
+            raise StorageUnavailableError("storage unreachable") from exc
+        if response.status_code >= 500:
+            raise StorageUnavailableError(f"storage error {response.status_code}")
+        if response.status_code in (400, 404):
+            raise StorageObjectMissingError("cannot sign that object")
+        if response.status_code >= 400:
+            raise StorageRejectedError(response.status_code)
+        return response.json()
+
     def download(self, path: str) -> bytes:
         url = f"{self._base}/authenticated/{self._bucket}/{quote(path)}"
         try:
@@ -69,3 +99,47 @@ class UserStorage:
         if response.status_code >= 400:
             raise StorageRejectedError(response.status_code)
         return response.content
+
+
+def _relative(value: object) -> str:
+    """Keep only Storage's relative ``/object/...`` path; never trust a full URL."""
+    if not isinstance(value, str):
+        raise StorageUnavailableError("storage returned no signed URL")
+    parts = urlsplit(value)
+    if parts.scheme or parts.netloc or not parts.path.startswith("/object/"):
+        raise StorageUnavailableError("unexpected signed URL")
+    if "token=" not in parts.query or len(value) > 2048:
+        raise StorageUnavailableError("unexpected signed URL")
+    return value
+
+
+class SignedObject:
+    """Read or create one object through a signed URL (no session, no keys)."""
+
+    def __init__(self, settings: Settings, relative_url: str) -> None:
+        self._url = f"{settings.supabase_url}/storage/v1{_relative(relative_url)}"
+
+    def download(self) -> bytes:
+        try:
+            with httpx.Client(timeout=_TIMEOUT) as client:
+                response = client.get(self._url)
+        except httpx.HTTPError as exc:
+            raise StorageUnavailableError("storage unreachable") from exc
+        if response.status_code >= 500:
+            raise StorageUnavailableError(f"storage error {response.status_code}")
+        if response.status_code >= 400:
+            raise StorageRejectedError(response.status_code)  # expired or revoked
+        return response.content
+
+    def upload(self, data: bytes, content_type: str) -> None:
+        try:
+            with httpx.Client(timeout=_TIMEOUT) as client:
+                response = client.put(
+                    self._url, content=data, headers={"Content-Type": content_type}
+                )
+        except httpx.HTTPError as exc:
+            raise StorageUnavailableError("storage unreachable") from exc
+        if response.status_code >= 500:
+            raise StorageUnavailableError(f"storage error {response.status_code}")
+        if response.status_code >= 400:
+            raise StorageRejectedError(response.status_code)

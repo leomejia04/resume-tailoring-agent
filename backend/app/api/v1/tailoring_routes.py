@@ -16,6 +16,7 @@ from sqlalchemy import and_, func, select
 from app.ai.budget import today
 from app.ai.client import LLMClient, LLMError, client_for
 from app.api.errors import ApiError
+from app.ats import reports
 from app.auth import rate_limit
 from app.auth.dependencies import current_user, enforce_limit, get_app_settings, user_db
 from app.auth.tokens import VerifiedUser
@@ -159,6 +160,8 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
     draft_out = None
     artifact_out = None
     approval_out = None
+    current_version = None
+    older_pdf_version = None
     draft = db.scalars(
         select(Draft).where(Draft.run_id == run.id, Draft.owner_id == user.id)
     ).first()
@@ -193,6 +196,15 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
             .where(Artifact.draft_version_id == version.id, Artifact.owner_id == user.id)
             .order_by(Artifact.created_at.desc())
         ).first()
+        current_version = (version.id, version.version)
+        if artifact is None:
+            older_pdf_version = db.scalar(
+                select(DraftVersion.version)
+                .join(Artifact, Artifact.draft_version_id == DraftVersion.id)
+                .where(DraftVersion.draft_id == draft.id, Artifact.owner_id == user.id)
+                .order_by(Artifact.created_at.desc())
+                .limit(1)
+            )
         if artifact is not None:
             artifact_out = ArtifactOut(
                 id=artifact.id,
@@ -230,6 +242,15 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
             created_at=version.created_at,
             sources=sources,
         )
+    master = runs.run_master(db, user, run)
+    ats = reports.overview(
+        db,
+        run,
+        master_version_id=master.id if master else None,
+        draft_version=current_version,
+        artifact_id=artifact_out.id if artifact_out else None,
+        older_pdf_version=older_pdf_version,
+    )
     usage = db.execute(
         select(
             func.count(),
@@ -262,6 +283,7 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
         draft=draft_out,
         artifact=artifact_out,
         approval=approval_out,
+        ats=ats,
         usage=RunUsage(
             calls=usage[0],
             cost_usd=Decimal(usage[1]),

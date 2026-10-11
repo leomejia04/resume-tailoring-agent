@@ -7,6 +7,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.schemas.ats import AtsOverview
 from app.schemas.jobs import JobInputRequest
 from app.tailoring.models import AnalysisContent, DraftContent, ValidationReport
 
@@ -117,6 +118,8 @@ class RunOut(BaseModel):
     draft: DraftOut | None
     artifact: ArtifactOut | None = None
     approval: CurrentApproval | None = None
+    # ATS match estimate reports; None until the posting has been analyzed.
+    ats: AtsOverview | None = None
     usage: RunUsage
     created_at: datetime
     updated_at: datetime

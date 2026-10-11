@@ -4,6 +4,14 @@ import { messageOf } from '../../api/errors'
 import type { DraftContent, RunOut, VersionOut, VersionSummary } from '../../api/types'
 import { Alert } from '../../components/Alert'
 
+const ATS_LABELS = { pending: 'not checked', failed: 'check failed', stale: 'check out of date' } as const
+
+function atsLabel(v: VersionSummary): string | null {
+  if (!v.ats_status) return null
+  if (v.ats_status === 'complete') return v.ats_score == null ? null : `ATS estimate ${v.ats_score}`
+  return `ATS ${ATS_LABELS[v.ats_status]}`
+}
+
 const SOURCE_LABELS: Record<string, string> = {
   generation: 'Generated',
   repair: 'Generated and corrected',
@@ -77,6 +85,7 @@ export function VersionHistory({ run, onRun }: { run: RunOut; onRun: (run: RunOu
             <span>
               Version {v.version} · {SOURCE_LABELS[v.created_by] ?? v.created_by} ·{' '}
               {new Date(v.created_at).toLocaleString()}
+              {atsLabel(v) && <> · {atsLabel(v)}</>}
               {v.version === current.version && <span className="ml-1 font-medium">(current)</span>}
             </span>
             {v.version !== current.version && (

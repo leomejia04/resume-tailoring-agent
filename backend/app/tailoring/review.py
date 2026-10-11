@@ -4,7 +4,8 @@ Every change creates a new immutable draft version on top of the version the
 client last saw (409 otherwise). Direct edits, restores, section regeneration,
 and chat revisions pass the same deterministic checks as generation. Approval
 binds one version to the SHA-256 of its rendered PDF; any later version is
-unapproved until approved again.
+unapproved until approved again. Every new version and every rendered PDF gets
+an ATS report, and approval requires a complete report for that exact PDF.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from app.ai import prompts
 from app.ai.client import LLMClient, LLMError
 from app.ai.schemas import ChatPatchOut, EntryOut, TailoredDraftOut
 from app.api.errors import ApiError
+from app.ats import reports
 from app.auth.dependencies import unavailable, user_db
 from app.auth.tokens import VerifiedUser
 from app.config import Settings
@@ -37,17 +39,18 @@ from app.db.models import (
     JobAnalysis,
     JobPosting,
     JobPostingVersion,
-    MasterVersion,
     Profile,
     TailoringRun,
 )
 from app.documents.convert import ConversionError, ConversionUnavailableError
 from app.documents.extract import extract_docx, extract_pdf
+from app.documents.pdf_inspect import pdf_text
 from app.render.filename import download_filename
 from app.render.format import FormatPreferences
 from app.render.pipeline import render_draft
 from app.render.reconstructed_docx import ExtraEntry
 from app.render.template_docx import FactLocation
+from app.schemas.ats import ShownStatus
 from app.schemas.errors import FieldError
 from app.storage import (
     StorageObjectMissingError,
@@ -66,7 +69,14 @@ from app.tailoring.models import (
     ValidationIssue,
     ValidationReport,
 )
-from app.tailoring.runs import _owned_run, _verified_rows, call_model, transition
+from app.tailoring.runs import (
+    _owned_run,
+    _verified_rows,
+    call_model,
+    ensure_baseline,
+    run_master,
+    transition,
+)
 from app.tailoring.validate import (
     RULE_VERSION,
     check,
@@ -212,8 +222,10 @@ def save_version(
         raise ApiError(
             409, "conflict", "This draft changed in another tab. Reload to see the latest version."
         )
+    version_id = uuid.uuid4()
     db.add(
         DraftVersion(
+            id=version_id,
             draft_id=draft.id,
             owner_id=user.id,
             version=expected_version + 1,
@@ -224,6 +236,10 @@ def save_version(
             prompt_version=prompt_version,
         )
     )
+    db.flush()
+    inputs = reports.scoring_inputs(db, run)
+    if inputs is not None:
+        reports.record_draft(db, inputs, version_id, content)
     if run.status == "approved":
         transition(db, run, "awaiting_review")  # the new version is not approved
     return expected_version + 1
@@ -424,7 +440,10 @@ def restore_version(
         return save_version(db, user, run, draft, expected_version, content, report, "edit")
 
 
-def list_versions(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) -> list[DraftVersion]:
+def list_versions(
+    settings: Settings, user: VerifiedUser, run_id: uuid.UUID
+) -> list[tuple[DraftVersion, ShownStatus, int | None]]:
+    """Versions, newest first, with the status and score of each one's ATS report."""
     with user_db(settings, user) as db:
         run = _owned_run(db, user, run_id)
         draft = db.scalars(
@@ -432,13 +451,13 @@ def list_versions(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) -> 
         ).first()
         if draft is None:
             return []
-        return list(
-            db.scalars(
-                select(DraftVersion)
-                .where(DraftVersion.draft_id == draft.id, DraftVersion.owner_id == user.id)
-                .order_by(DraftVersion.version.desc())
-            ).all()
-        )
+        versions = db.scalars(
+            select(DraftVersion)
+            .where(DraftVersion.draft_id == draft.id, DraftVersion.owner_id == user.id)
+            .order_by(DraftVersion.version.desc())
+        ).all()
+        scores = reports.draft_scores(db, run)
+        return [(v, *scores.get(v.id, ("pending", None))) for v in versions]
 
 
 # --- Model-assisted revisions ---------------------------------------------------
@@ -709,13 +728,6 @@ def chat_revision(
 # --- Rendering, approval, downloads ---------------------------------------------
 
 
-def _master_for(db: Session, user: VerifiedUser, run: TailoringRun) -> MasterVersion | None:
-    query = select(MasterVersion).where(MasterVersion.owner_id == user.id)
-    if run.master_version_id:
-        query = query.where(MasterVersion.id == run.master_version_id)
-    return db.scalars(query.order_by(MasterVersion.version_number.desc())).first()
-
-
 def _prefix(profile: Profile | None) -> str | None:
     if profile is None:
         return None
@@ -730,7 +742,8 @@ def render_current(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) ->
     with user_db(settings, user) as db:
         run = _owned_run(db, user, run_id)
         draft, version, content = _draft_state(db, user, run)
-        master = _master_for(db, user, run)
+        inputs = reports.scoring_inputs(db, run)
+        master = run_master(db, user, run)
         rows = db.execute(
             select(EvidenceRecord, EvidenceVersion)
             .join(
@@ -818,6 +831,8 @@ def render_current(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) ->
                 )
             )
             db.flush()
+            if inputs is not None:  # the ATS check of this exact PDF
+                reports.record_pdf(db, inputs, artifact_id, outcome.content, outcome.pdf_text)
             storage.upload(f"{base}.pdf", outcome.pdf, "application/pdf")
             storage.upload(
                 f"{base}.docx",
@@ -862,6 +877,9 @@ def approve(
             )
         if db.scalar(select(Approval.id).where(Approval.artifact_id == artifact.id)) is not None:
             raise ApiError(409, "conflict", "This PDF is already approved.")
+        check = reports.subject_status(db, run, "final_pdf", artifact.id)
+        if check != "complete":
+            raise ApiError(409, f"ats_check_{check}", reports.APPROVAL_BLOCKED[check])
         approval = Approval(
             id=uuid.uuid4(),
             owner_id=user.id,
@@ -874,6 +892,45 @@ def approve(
         db.add(approval)
         transition(db, run, "approved")
         return approval.id
+
+
+def run_checks(settings: Settings, user: VerifiedUser, run_id: uuid.UUID) -> None:
+    """Check the run's current master, draft version, and PDF where no current report exists.
+
+    Used to retry a failed check or to re-check after a rubric upgrade. Existing
+    complete reports are kept; nothing is scored twice.
+    """
+    with user_db(settings, user) as db:
+        run = _owned_run(db, user, run_id)
+        if run.analysis_id is None:
+            raise ApiError(409, "invalid_state", "Analyze the job posting first.")
+    ensure_baseline(settings, user, run_id)
+    with user_db(settings, user) as db:
+        run = _owned_run(db, user, run_id)
+        inputs = reports.scoring_inputs(db, run)
+        draft = db.scalars(
+            select(Draft).where(Draft.run_id == run.id, Draft.owner_id == user.id)
+        ).first()
+        if inputs is None or draft is None:
+            return
+        _, version, content = _draft_state(db, user, run)
+        if reports.needs_check(db, run, "draft", version.id):
+            reports.record_draft(db, inputs, version.id, content)
+        artifact_id = db.scalar(
+            select(Artifact.id)
+            .where(Artifact.draft_version_id == version.id, Artifact.owner_id == user.id)
+            .order_by(Artifact.created_at.desc())
+        )
+        if artifact_id is None or not reports.needs_check(db, run, "final_pdf", artifact_id):
+            return
+    text, error = None, None
+    try:
+        data, _ = artifact_bytes(settings, user, artifact_id)  # hash-verified bytes
+        text = pdf_text(data)
+    except ApiError:
+        error = "storage_unavailable"
+    with user_db(settings, user) as db:
+        reports.record_pdf(db, inputs, artifact_id, content, text, error)
 
 
 def artifact_bytes(

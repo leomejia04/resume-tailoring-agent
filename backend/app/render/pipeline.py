@@ -53,6 +53,7 @@ class RenderOutcome(BaseModel):
     docx: bytes
     checks: RenderChecks
     content: DraftContent  # after any bullets dropped to fit
+    pdf_text: str  # extracted from the final PDF, for the ATS check
 
 
 def _convert(docx: bytes) -> bytes:
@@ -196,5 +197,7 @@ def render_draft(
             notes=notes,
             rounds=round_number,
         )
-        return RenderOutcome(pdf=pdf, docx=docx, checks=checks, content=current)
+        return RenderOutcome(
+            pdf=pdf, docx=docx, checks=checks, content=current, pdf_text=report.text
+        )
     raise AssertionError("unreachable")  # pragma: no cover

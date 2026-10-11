@@ -254,3 +254,15 @@ def extract_pdf(data: bytes) -> ExtractionResult:
     if not builder.candidates:
         notes.append("No bullet points were recognized.")
     return ExtractionResult(builder.candidates, notes, "partial", header[:6])
+
+
+def plain_text(data: bytes, kind: str) -> str:
+    """The master's selectable text line by line (for the ATS baseline), no structure."""
+    if kind == "docx":
+        return "\n".join(p.text for p in body_paragraphs(Document(io.BytesIO(data))))
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        return "\n".join(
+            line["text"]
+            for page in pdf.pages
+            for line in page.extract_text_lines(return_chars=False)
+        )

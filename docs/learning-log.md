@@ -168,3 +168,19 @@ Short notes on concepts introduced while building, in plain language.
 - **Shared test state leaks.** A test that reserved budget without releasing
   it slowly used up the application-wide daily cap until unrelated runs were
   refused. Tests that touch shared counters must clean up after themselves.
+- **Store facts, derive status.** A report for draft version 3 is true forever;
+  what changes is whether version 3 is still current. Storing `stale` would
+  need an UPDATE every time anything changed (and could be missed). Instead
+  the row stays immutable and "stale" is computed when reading, by comparing
+  the report's subject and rubric version with the run's current ones.
+- **One transaction, one truth.** The draft version and its report are written
+  in the same transaction (`flush()` gives the version its ID first). If
+  either fails, neither exists, so the UI can never show a version whose
+  score belongs to something else.
+- **Partial unique indexes.** `CREATE UNIQUE INDEX ... WHERE status =
+  'complete'` allows many failed attempts but only one complete report per
+  subject. Paired with `INSERT ... ON CONFLICT DO NOTHING`, two tabs checking
+  at once both succeed and only one row is kept.
+- **Why the re-check is a POST.** Reading a run (GET) must never change data,
+  so a missing report is shown as "not checked yet" rather than computed on
+  the fly; the user (or, later, the worker) triggers the check explicitly.

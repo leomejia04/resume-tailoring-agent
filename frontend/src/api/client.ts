@@ -334,6 +334,10 @@ export const approveDraft = (runId: string, draftVersion: number, artifactId: st
     body: { draft_version: draftVersion, artifact_id: artifactId, artifact_sha256: sha256 },
   })
 
+// Re-runs only the missing, failed, or out-of-date checks; may download and parse files.
+export const runAtsCheck = (runId: string) =>
+  apiRequest<RunOut>(`${runPath(runId)}/ats/check`, { method: 'POST', timeoutMs: AI_TIMEOUT_MS })
+
 export const listApprovals = (signal?: AbortSignal) => apiRequest<ApprovalOut[]>('/approvals', { signal })
 
 export const artifactPdfUrl = (id: string) => `${API_BASE}/artifacts/${encodeURIComponent(id)}/pdf`

@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { describe, expect, it } from 'vitest'
-import type { ArtifactOut, RunOut } from '../../api/types'
+import type { ArtifactOut, AtsOverview, RunOut } from '../../api/types'
 import { errorResponse, jsonResponse, routeFetch } from '../../test/http'
 import { DraftEditor } from './DraftEditor'
 import { ExportPanel } from './ExportPanel'
@@ -92,6 +92,22 @@ const ARTIFACT: ArtifactOut = {
   created_at: '',
 }
 
+function atsFor(status: 'complete' | 'failed', score: number | null = 62): AtsOverview {
+  const report = {
+    kind: 'final_pdf' as const,
+    status,
+    score: status === 'complete' ? score : null,
+    result: null,
+    rubric_version: 'ats-rubric/v1',
+    draft_version: 1,
+    artifact_id: 'art-1',
+    master_version_id: null,
+    checked_at: '2026-10-11T09:00:00Z',
+    message: status === 'failed' ? 'The check could not be completed.' : null,
+  }
+  return { rubric_version: 'ats-rubric/v1', baseline: null, draft: null, final_pdf: report, draft_vs_baseline: null, pdf_vs_baseline: null }
+}
+
 function Harness({ initial, children }: { initial: RunOut; children: (run: RunOut, set: (r: RunOut) => void) => React.ReactNode }) {
   const [run, setRun] = useState(initial)
   return <>{children(run, setRun)}</>
@@ -100,7 +116,7 @@ function Harness({ initial, children }: { initial: RunOut; children: (run: RunOu
 describe('ExportPanel', () => {
   it('creates the PDF, shows the real page, approves the exact bytes, and offers the named download', async () => {
     const fetchMock = routeFetch({
-      'POST /runs/run-1/render': () => jsonResponse(201, makeRun({ artifact: ARTIFACT })),
+      'POST /runs/run-1/render': () => jsonResponse(201, makeRun({ artifact: ARTIFACT, ats: atsFor('complete') })),
       'POST /runs/run-1/approve': () =>
         jsonResponse(
           200,
@@ -120,6 +136,7 @@ describe('ExportPanel', () => {
     expect(screen.getByRole('link', { name: 'Open the PDF' })).toHaveAttribute('href', '/api/v1/artifacts/art-1/pdf')
     expect(screen.getByText(/Checks passed/)).toBeInTheDocument()
     expect(screen.getByText('Removed to fit one page (1)')).toBeInTheDocument()
+    expect(screen.getByText('ATS match estimate for this PDF: 62 / 100.')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: 'Approve this PDF' }))
     const download = await screen.findByRole('link', { name: `Download ${ARTIFACT.filename}` })
@@ -130,6 +147,23 @@ describe('ExportPanel', () => {
       artifact_id: 'art-1',
       artifact_sha256: ARTIFACT.sha256,
     })
+  })
+
+  it('waits for the ATS check of the exact PDF before offering approval', async () => {
+    const fetchMock = routeFetch({
+      'POST /runs/run-1/ats/check': () => jsonResponse(200, makeRun({ artifact: ARTIFACT, ats: atsFor('complete', 70) })),
+    })
+    render(
+      <Harness initial={makeRun({ artifact: ARTIFACT, ats: atsFor('failed') })}>
+        {(run, set) => <ExportPanel run={run} onRun={set} />}
+      </Harness>,
+    )
+    expect(screen.getByText(/Approval waits for the ATS check of this exact PDF: The check could not be completed./)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Approve this PDF' })).not.toBeInTheDocument()
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Run the check' }))
+    expect(await screen.findByRole('button', { name: 'Approve this PDF' })).toBeInTheDocument()
+    expect(screen.getByText('ATS match estimate for this PDF: 70 / 100.')).toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('refuses approval for a PDF that failed its checks', () => {

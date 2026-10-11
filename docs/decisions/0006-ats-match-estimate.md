@@ -1,8 +1,8 @@
 # ADR 0006: ATS match estimate rubric
 
-Status: accepted for the scoring engine (milestone 6a). Report storage, the
-approval gate, the durable worker, and automatic improvements follow in later
-milestone 6 slices and will extend this record.
+Status: accepted. Scoring engine (milestone 6a) and saved reports with the
+approval gate (6b). The durable worker (6c) and automatic improvements (6d)
+will extend this record.
 
 ## Context
 
@@ -82,6 +82,57 @@ stuffing, and separate from factual validation and PDF readability checks.
    different rubric versions or different analysis fingerprints (SHA-256 of
    the requirement list), and lists requirements whose credit rose or fell.
 
+## Saved reports and the approval gate (6b)
+
+10. **One insert-only report per check.** `app.ats_reports` stores the owner,
+    run, job analysis, kind (`master_baseline`, `draft`, `final_pdf`), exactly
+    one subject (master version, draft version, or artifact; a check
+    constraint enforces it), status (`pending`, `complete`, `failed`), score,
+    result JSON, rubric version, analysis fingerprint, and an error code.
+    Composite `(id, owner_id)` foreign keys make cross-owner references
+    impossible; forced row-level security limits the runtime role to its own
+    rows, with SELECT and INSERT only. Partial unique indexes allow at most one
+    complete report per subject, analysis, and rubric version; inserts use
+    `ON CONFLICT DO NOTHING`, so concurrent checks cannot store duplicates.
+11. **When checks run.** Scoring is deterministic and takes milliseconds, so
+    until the durable worker it runs inline, in the transaction that creates
+    its subject:
+    - the master baseline after the job analysis (the master is downloaded
+      once and its text read line by line; `run_master` picks the run's
+      chosen master, else the newest);
+    - a draft report for every new version: generation, repair, direct edit,
+      restore, section rewrite, and chat revision;
+    - a final-PDF report when the PDF is rendered, scored from the text
+      extracted from those exact bytes, in the same transaction as the
+      artifact row.
+    A scoring bug or unreadable file is stored as a failed report (logged by
+    exception type only, never content) and never blocks saving a draft or
+    starting a run.
+12. **Staleness is derived, never written.** A report applies only to the
+    run's current subject, the run's analysis, and the current rubric
+    version. Otherwise the API shows `stale` (or `pending` when no report
+    exists) and no number: a rubric upgrade, a new master version, or a PDF
+    made before the latest draft change all surface this way without
+    rewriting history.
+13. **Approval requires a complete check of the exact PDF.** On top of the
+    version + SHA-256 binding and the layout checks, `approve` returns 409
+    (`ats_check_pending`, `ats_check_failed`, or `ats_check_stale`) unless the
+    artifact has a complete final-PDF report under the current rubric. The
+    score itself never blocks approval; must-have gaps are shown, not
+    enforced.
+14. **Explicit re-check.** `POST /runs/{id}/ats/check` (rate-limited, no model
+    calls) scores whatever current subject lacks a complete report: it
+    retries failures and re-checks after a rubric upgrade. Complete reports
+    are never redone. GET routes never score.
+15. **What the UI shows.** "ATS match estimate" with the rubric weights and
+    the not-an-employer-score disclaimer beside the number; master, current
+    draft, and final PDF side by side with the change versus the master; the
+    category table; must-have gaps separately; direct, related, missing, and
+    uncertain requirements with their passages (PDF passages labeled); and
+    repeated terms with a note that repetition does not help. Pending,
+    failed, and stale checks show words and a retry, never a number. Version
+    history lists each version's estimate.
+
 ## Limitations
 
 - Stemming and the stopword list are simple, and there are no synonyms
@@ -91,4 +142,9 @@ stuffing, and separate from factual validation and PDF readability checks.
 - A master baseline has no experience context, so the academic-only cap can
   apply to a tailored report but not to its baseline.
 - Passing our parser and rubric does not mean every ATS reads or ranks the
-  PDF the same way. The UI must say this next to the number.
+  PDF the same way. The UI says this next to the number.
+- Match passages show where the resume text matched; they do not yet link
+  back to the evidence record behind each bullet (the draft editor shows
+  those sources).
+- The baseline needs the master file from storage under the user's session.
+  The durable worker (6c) must solve storage access without a service role.

@@ -31,6 +31,7 @@ from app.db.models import (
 )
 from app.documents.pdf_inspect import render_page_png
 from app.render.format import FormatPreferences
+from app.schemas.ats import ShownStatus
 from app.schemas.errors import ErrorResponse
 from app.schemas.tailoring import RunOut
 from app.tailoring import review
@@ -46,6 +47,9 @@ class VersionSummary(BaseModel):
     created_at: datetime
     passed: bool
     model: str | None
+    ats_status: ShownStatus
+    # The version's ATS match estimate; None unless its check is complete.
+    ats_score: int | None
 
 
 class VersionOut(VersionSummary):
@@ -141,8 +145,10 @@ def versions(
             created_at=v.created_at,
             passed=bool(v.validation.get("passed")),
             model=v.model,
+            ats_status=ats_status,
+            ats_score=ats_score,
         )
-        for v in review.list_versions(settings, user, run_id)
+        for v, ats_status, ats_score in review.list_versions(settings, user, run_id)
     ]
 
 
@@ -153,7 +159,7 @@ def version_detail(
     user: VerifiedUser = Depends(current_user),
     settings: Settings = Depends(get_app_settings),
 ) -> VersionOut:
-    for v in review.list_versions(settings, user, run_id):
+    for v, ats_status, ats_score in review.list_versions(settings, user, run_id):
         if v.version == number:
             return VersionOut(
                 version=v.version,
@@ -161,6 +167,8 @@ def version_detail(
                 created_at=v.created_at,
                 passed=bool(v.validation.get("passed")),
                 model=v.model,
+                ats_status=ats_status,
+                ats_score=ats_score,
                 content=DraftContent.model_validate(v.content),
                 validation=ValidationReport.model_validate(v.validation),
             )
@@ -305,6 +313,18 @@ def artifact_preview(
         render_page_png(pdf_path, png_path, dpi=110)
         png = png_path.read_bytes()
     return Response(content=png, media_type="image/png")
+
+
+@router.post("/runs/{run_id}/ats/check", response_model=RunOut, responses=_ERRORS)
+def ats_check(
+    run_id: uuid.UUID,
+    user: VerifiedUser = Depends(current_user),
+    settings: Settings = Depends(get_app_settings),
+) -> RunOut:
+    """Run any missing, failed, or out-of-date ATS checks for the run's current versions."""
+    enforce_limit(settings, rate_limit.ATS_CHECK_USER, str(user.id))
+    review.run_checks(settings, user, run_id)
+    return _load_run_out(settings, user, run_id)
 
 
 @router.post("/runs/{run_id}/approve", response_model=RunOut, responses=_ERRORS)

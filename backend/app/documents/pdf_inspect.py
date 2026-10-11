@@ -6,6 +6,7 @@ positions, and its pypdfium2 backend (BSD-3/Apache-2.0) for page images.
 
 from __future__ import annotations
 
+import io
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,6 +50,16 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _page_texts(pdf: pdfplumber.PDF) -> list[str]:
+    return [page.extract_text() or "" for page in pdf.pages]
+
+
+def pdf_text(data: bytes) -> str:
+    """The PDF's extracted text, exactly as ``inspect_pdf`` reports it."""
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        return "\n".join(_page_texts(pdf))
+
+
 def _touches_edge(word: dict, width: float, height: float) -> bool:
     return (
         word["x0"] < _EDGE_TOLERANCE
@@ -60,9 +71,8 @@ def _touches_edge(word: dict, width: float, height: float) -> bool:
 
 def inspect_pdf(path: Path, expected_phrases: list[str] | None = None) -> PdfReport:
     with pdfplumber.open(path) as pdf:
-        texts, fonts, clipped = [], set(), []
+        texts, fonts, clipped = _page_texts(pdf), set(), []
         for page_number, page in enumerate(pdf.pages, start=1):
-            texts.append(page.extract_text() or "")
             fonts.update(_SUBSET_PREFIX.sub("", c["fontname"]) for c in page.chars)
             for word in page.extract_words():
                 if _touches_edge(word, page.width, page.height):

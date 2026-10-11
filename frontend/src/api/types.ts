@@ -268,6 +268,7 @@ export interface RunOut {
   draft: DraftOut | null
   artifact?: ArtifactOut | null
   approval?: CurrentApproval | null
+  ats?: AtsOverview | null
   usage: { calls: number; cost_usd: string; input_tokens: number; output_tokens: number }
   created_at: string
   updated_at: string
@@ -336,6 +337,8 @@ export interface VersionSummary {
   created_at: string
   passed: boolean
   model: string | null
+  ats_status?: AtsStatus
+  ats_score?: number | null
 }
 
 export interface VersionOut extends VersionSummary {
@@ -370,4 +373,77 @@ export interface ApprovalOut {
   draft_version: number
   artifact_sha256: string
   approved_at: string
+}
+
+// --- ATS match estimate (mirrors backend/app/ats/scoring.py and app/schemas/ats.py) ---
+
+export type AtsStatus = 'pending' | 'complete' | 'failed' | 'stale'
+export type RequirementStatus = 'direct' | 'related' | 'missing' | 'uncertain'
+
+export interface AtsMatch {
+  kind: 'direct' | 'related' | 'negated'
+  basis: 'exact_term' | 'draft_link' | 'shared_wording'
+  where: string
+  snippet: string
+  term: string | null
+}
+
+export interface AtsRequirement {
+  id: string
+  merged_ids: string[]
+  category: RequirementCategory
+  text: string
+  mandatory: boolean
+  scored: boolean
+  status: RequirementStatus
+  credit: number
+  matched_terms: string[]
+  missing_terms: string[]
+  excluded_terms: string[]
+  notes: string[]
+  matches: AtsMatch[]
+}
+
+export interface AtsResult {
+  rubric_version: string
+  analysis_fingerprint: string
+  score: number | null
+  categories: { category: RequirementCategory; requirements: number; weight: number; score: number }[]
+  requirements: AtsRequirement[]
+  mandatory_gaps: string[]
+  mandatory_partial: string[]
+  counts: Record<RequirementStatus, number>
+  repeated_terms: { term: string; mentions: number }[]
+}
+
+export interface AtsComparison {
+  compatible: boolean
+  reason: string | null
+  baseline: number | null
+  tailored: number | null
+  delta: number | null
+  improved: string[]
+  declined: string[]
+}
+
+export interface AtsReport {
+  kind: 'master_baseline' | 'draft' | 'final_pdf'
+  status: AtsStatus
+  score: number | null
+  result: AtsResult | null
+  rubric_version: string | null
+  draft_version: number | null
+  artifact_id: string | null
+  master_version_id: string | null
+  checked_at: string | null
+  message: string | null
+}
+
+export interface AtsOverview {
+  rubric_version: string
+  baseline: AtsReport | null
+  draft: AtsReport | null
+  final_pdf: AtsReport | null
+  draft_vs_baseline: AtsComparison | null
+  pdf_vs_baseline: AtsComparison | null
 }

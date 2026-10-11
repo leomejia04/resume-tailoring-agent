@@ -54,6 +54,9 @@ RUN_STATUSES = (
 )
 QUESTION_STATUSES = ("open", "confirmed", "declined", "dismissed")
 DRAFT_SOURCES = ("generation", "repair", "edit", "chat")
+ATS_REPORT_KINDS = ("master_baseline", "draft", "final_pdf")
+# "stale" is never stored: it is derived when a report no longer matches the run.
+ATS_REPORT_STATUSES = ("pending", "complete", "failed")
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -505,6 +508,95 @@ class Approval(Base):
     artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     filename: Mapped[str] = mapped_column(String(200), nullable=False)
     approved_at: Mapped[datetime] = _created_at()
+
+
+class AtsReport(Base):
+    """An ATS match estimate for one immutable subject (ADR 0006). Insert-only.
+
+    The subject is a master version (baseline), a draft version, or a rendered
+    artifact (the exact final PDF). A report never changes; whether it is still
+    current (or stale) is decided when reading, by comparing its subject and
+    rubric version with the run's current ones.
+    """
+
+    __tablename__ = "ats_reports"
+    __table_args__ = (
+        _owner_fk(["run_id", "owner_id"], "tailoring_runs", "fk_ats_reports_run_owner"),
+        _owner_fk(["analysis_id", "owner_id"], "job_analyses", "fk_ats_reports_analysis_owner"),
+        _owner_fk(
+            ["master_version_id", "owner_id"], "master_versions", "fk_ats_reports_master_owner"
+        ),
+        _owner_fk(
+            ["draft_version_id", "owner_id"], "draft_versions", "fk_ats_reports_draft_version_owner"
+        ),
+        _owner_fk(["artifact_id", "owner_id"], "artifacts", "fk_ats_reports_artifact_owner"),
+        CheckConstraint(_in("kind", ATS_REPORT_KINDS), name="kind"),
+        CheckConstraint(_in("status", ATS_REPORT_STATUSES), name="status"),
+        CheckConstraint(
+            "(kind = 'master_baseline' AND master_version_id IS NOT NULL"
+            " AND draft_version_id IS NULL AND artifact_id IS NULL)"
+            " OR (kind = 'draft' AND draft_version_id IS NOT NULL"
+            " AND master_version_id IS NULL AND artifact_id IS NULL)"
+            " OR (kind = 'final_pdf' AND artifact_id IS NOT NULL"
+            " AND master_version_id IS NULL AND draft_version_id IS NULL)",
+            name="one_subject",
+        ),
+        CheckConstraint(
+            "(status = 'complete' AND result IS NOT NULL AND error_code IS NULL)"
+            " OR (status <> 'complete' AND result IS NULL AND score IS NULL)",
+            name="outcome",
+        ),
+        CheckConstraint("status <> 'failed' OR error_code IS NOT NULL", name="failed_has_code"),
+        CheckConstraint("score IS NULL OR score BETWEEN 0 AND 100", name="score_range"),
+        CheckConstraint("analysis_fingerprint ~ '^[0-9a-f]{64}$'", name="fingerprint_hex"),
+        Index("ix_ats_reports_owner_run", "owner_id", "run_id", "created_at"),
+        Index("ix_ats_reports_artifact", "artifact_id"),
+        Index("ix_ats_reports_draft_version", "draft_version_id"),
+        # At most one complete report per subject, analysis, and rubric version, so
+        # concurrent checks cannot store duplicates (inserts use ON CONFLICT DO NOTHING).
+        Index(
+            "uq_ats_reports_complete_master",
+            "master_version_id",
+            "run_id",
+            "analysis_id",
+            "rubric_version",
+            unique=True,
+            postgresql_where=text("kind = 'master_baseline' AND status = 'complete'"),
+        ),
+        Index(
+            "uq_ats_reports_complete_draft",
+            "draft_version_id",
+            "analysis_id",
+            "rubric_version",
+            unique=True,
+            postgresql_where=text("kind = 'draft' AND status = 'complete'"),
+        ),
+        Index(
+            "uq_ats_reports_complete_pdf",
+            "artifact_id",
+            "analysis_id",
+            "rubric_version",
+            unique=True,
+            postgresql_where=text("kind = 'final_pdf' AND status = 'complete'"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    analysis_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    master_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    draft_version_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    artifact_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    # None unless complete, and None when nothing could be scored; never shown as 0.
+    score: Mapped[int | None] = mapped_column(Integer)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    rubric_version: Mapped[str] = mapped_column(String(50), nullable=False)
+    analysis_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = _created_at()
 
 
 class ChatMessage(Base):

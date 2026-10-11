@@ -1,5 +1,12 @@
 import { useState } from 'react'
-import { approvalDownloadUrl, approveDraft, artifactPdfUrl, artifactPreviewUrl, renderDraft } from '../../api/client'
+import {
+  approvalDownloadUrl,
+  approveDraft,
+  artifactPdfUrl,
+  artifactPreviewUrl,
+  renderDraft,
+  runAtsCheck,
+} from '../../api/client'
 import { messageOf } from '../../api/errors'
 import type { RunOut } from '../../api/types'
 import { Alert } from '../../components/Alert'
@@ -10,12 +17,15 @@ interface Props {
 }
 
 export function ExportPanel({ run, onRun }: Props) {
-  const [busy, setBusy] = useState<'render' | 'approve' | null>(null)
+  const [busy, setBusy] = useState<'render' | 'approve' | 'check' | null>(null)
   const [error, setError] = useState<{ message: string; requestId: string | null } | null>(null)
   const draft = run.draft
   if (!draft) return null
   const artifact = run.artifact ?? null
   const current = artifact !== null && artifact.draft_version === draft.version
+  // Approval also needs a complete ATS check of this exact PDF (enforced by the server too).
+  const pdfCheck = run.ats?.final_pdf ?? null
+  const checked = pdfCheck?.status === 'complete' && artifact !== null && pdfCheck.artifact_id === artifact.id
 
   async function render() {
     if (busy) return
@@ -23,6 +33,19 @@ export function ExportPanel({ run, onRun }: Props) {
     setError(null)
     try {
       onRun(await renderDraft(run.id))
+    } catch (err) {
+      setError(messageOf(err))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function check() {
+    if (busy) return
+    setBusy('check')
+    setError(null)
+    try {
+      onRun(await runAtsCheck(run.id))
     } catch (err) {
       setError(messageOf(err))
     } finally {
@@ -126,8 +149,27 @@ export function ExportPanel({ run, onRun }: Props) {
                 </ul>
               </details>
             )}
-            {!run.approval && artifact.passed && (
+            {!run.approval && artifact.passed && !checked && (
               <div className="space-y-2 border-t border-slate-200 pt-3">
+                <p className="text-slate-700">
+                  Approval waits for the ATS check of this exact PDF
+                  {pdfCheck && pdfCheck.status !== 'complete' && pdfCheck.message ? `: ${pdfCheck.message}` : '.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={check}
+                  aria-disabled={busy !== null}
+                  className="rounded-md border border-slate-300 px-3 py-1.5 aria-disabled:opacity-60"
+                >
+                  {busy === 'check' ? 'Checking…' : 'Run the check'}
+                </button>
+              </div>
+            )}
+            {!run.approval && artifact.passed && checked && (
+              <div className="space-y-2 border-t border-slate-200 pt-3">
+                {pdfCheck?.score != null && (
+                  <p className="text-slate-700">ATS match estimate for this PDF: {pdfCheck.score} / 100.</p>
+                )}
                 <p className="text-slate-700">
                   Approving locks this exact PDF. Any later change creates a new version that needs approval again.
                 </p>

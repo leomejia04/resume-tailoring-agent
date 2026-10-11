@@ -5,6 +5,7 @@ import { messageOf } from '../api/errors'
 import type { AIStatus, EvidenceItem, ExperienceType, Question, RunOut, RunStatus } from '../api/types'
 import { AIBadge } from '../components/AIBadge'
 import { Alert } from '../components/Alert'
+import { AtsPanel } from './run/AtsPanel'
 import { DraftEditor } from './run/DraftEditor'
 import { ExportPanel } from './run/ExportPanel'
 import { ChatPanel, FormatPanel } from './run/RevisePanel'
@@ -403,6 +404,7 @@ export function RunPage() {
           <DraftEditor run={run} draft={run.draft} onRun={setRun} canRegenerate={ai?.provider !== 'disabled'} />
         </section>
       )}
+      {run.ats && <AtsPanel run={run} onRun={setRun} />}
       {run.draft && <ExportPanel run={run} onRun={setRun} />}
       {run.draft && <FormatPanel key={run.draft.version} run={run} onRun={setRun} />}
       {run.draft && <ChatPanel run={run} onRun={setRun} enabled={ai?.provider === 'openai'} />}

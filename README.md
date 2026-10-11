@@ -30,6 +30,7 @@ resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md
 backend/app/ai/           model clients (OpenAI, demo), prompts, pricing, budgets
 backend/app/tailoring/    job analysis, gaps/questions, drafting, validation, review/approval
 backend/app/render/       template-aware and reconstructed DOCX rendering, one-page fitting
+backend/app/ats/          ATS match estimate: term matching, passages, rubric scoring (ADR 0006)
 backend/app/api/          FastAPI routes (/api/v1), error envelope, middleware
 backend/app/auth/         session cookies, JWT verification, CSRF, rate limits
 backend/app/db/           SQLAlchemy models and per-user sessions

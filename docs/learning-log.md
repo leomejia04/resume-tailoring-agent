@@ -148,3 +148,23 @@ Short notes on concepts introduced while building, in plain language.
   `break-all` let it shrink on phones.
 - **Framing as a permission.** The API forbids being embedded by default;
   the PDF preview route alone allows framing by our own origin.
+
+## Milestone 6: ATS reports and reliability
+
+- **A rubric is a contract.** Writing the weights, credits, and edge cases
+  down (ADR 0006) before showing a number means every score can be explained
+  requirement by requirement and reproduced later with the same version.
+- **Exact fractions for scoring.** `Fraction(50, 65)` stays exact through
+  averaging and weighting; rounding happens once, at display time, so two
+  equal inputs can never round to different results.
+- **Regex word boundaries.** `(?<![A-Za-z0-9])Java(?![A-Za-z0-9])` is a
+  lookbehind and a lookahead: "Java" must not touch a letter or digit on
+  either side, so "JavaScript" does not match. Short names like R or C need
+  stricter neighbours to avoid R&D or C++.
+- **Unknown is not zero, and not free.** Requirements we cannot check stay in
+  the denominator (so the estimate cannot rise by being unsure) but are shown
+  as "uncertain", not "missing". A report with nothing to score shows no
+  number at all.
+- **Shared test state leaks.** A test that reserved budget without releasing
+  it slowly used up the application-wide daily cap until unrelated runs were
+  refused. Tests that touch shared counters must clean up after themselves.

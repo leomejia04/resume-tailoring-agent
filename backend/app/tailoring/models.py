@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.render.format import FormatPreferences
+
 Category = Literal["required", "preferred", "responsibility", "terminology"]
 
 
@@ -60,6 +62,8 @@ class DraftContent(_Model):
     entries: list[DraftEntry]
     skills: list[DraftSkill]
     omitted: list[OmittedFact]
+    # Part of the immutable version, so approval also covers the layout choices.
+    format: FormatPreferences = Field(default_factory=FormatPreferences)
 
 
 class ValidationIssue(_Model):

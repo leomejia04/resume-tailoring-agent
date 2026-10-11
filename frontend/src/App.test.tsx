@@ -19,6 +19,8 @@ function renderAt(path: string) {
 const signedIn = {
   'GET /auth/me': () => jsonResponse(200, USER),
   'GET /health': () => jsonResponse(200, { status: 'ok', version: '0.1.0' }),
+  'GET /runs': () => jsonResponse(200, []),
+  'GET /approvals': () => jsonResponse(200, []),
 }
 
 describe('App shell', () => {
@@ -47,6 +49,8 @@ describe('App shell', () => {
       'GET /auth/me': [() => errorResponse(401, 'session_expired'), () => jsonResponse(200, USER)],
       'POST /auth/refresh': () => jsonResponse(200, { status: 'signed_in', user: USER }),
       'GET /health': () => jsonResponse(200, { status: 'ok', version: '0.1.0' }),
+      'GET /runs': () => jsonResponse(200, []),
+      'GET /approvals': () => jsonResponse(200, []),
     })
     renderAt('/')
     expect(await screen.findByText(USER.email)).toBeInTheDocument()

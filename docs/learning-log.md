@@ -130,3 +130,21 @@ Short notes on concepts introduced while building, in plain language.
   safely because the row lock makes concurrent requests take turns.
 - **Decimals for money.** Floating point cannot represent 0.1 exactly; costs
   use Python `Decimal` and PostgreSQL `numeric`.
+
+## Milestone 5: review and export
+
+- **Immutable versions make undo trivial.** Nothing is overwritten, so "undo"
+  is just "make a new version that copies an old one", and history is never
+  lost.
+- **Bind approval to bytes.** A SHA-256 hash is a fingerprint of the exact PDF.
+  Approving "version 4 with hash ab12..." means any change, even one byte,
+  is detectably not what was approved.
+- **Never hide what was cut.** Limits and one-page fitting remove bullets; the
+  report lists every removal so the user sees exactly what is not on the page.
+- **Check the artifact, not the intent.** The reading-order check on the real
+  PDF caught a duplicated degree line that page-count checks could not.
+- **CSS grid and long words.** A grid column grows to fit its longest
+  unbreakable word (like a long filename); `grid-cols-1` (minmax(0, 1fr)) and
+  `break-all` let it shrink on phones.
+- **Framing as a permission.** The API forbids being embedded by default;
+  the PDF preview route alone allows framing by our own origin.

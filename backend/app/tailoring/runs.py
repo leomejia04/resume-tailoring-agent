@@ -38,9 +38,11 @@ from app.db.models import (
     JobPosting,
     JobPostingVersion,
     MasterVersion,
+    Profile,
     TailoringRun,
 )
 from app.documents.extract import find_metrics
+from app.render.format import FormatPreferences
 from app.tailoring.analysis import find_gaps, normalize_analysis, question_for
 from app.tailoring.context import build_context, draft_payload
 from app.tailoring.models import AnalysisContent
@@ -55,7 +57,9 @@ TRANSITIONS: dict[str, set[str]] = {
     "ready": {"drafting", "cancelled"},
     "drafting": {"validating", "failed", "cancelled"},
     "validating": {"awaiting_review", "failed"},
-    "awaiting_review": {"drafting", "cancelled"},
+    "awaiting_review": {"drafting", "approved", "cancelled"},
+    # A new draft version after approval returns to review; drafting again is allowed.
+    "approved": {"drafting", "awaiting_review", "cancelled"},
     "failed": {"analyzing", "drafting", "cancelled"},
     "cancelled": set(),
 }
@@ -535,6 +539,9 @@ def generate_draft(
 
     content, report = finalize(output, context, analysis, checked, repaired)
     with user_db(settings, user) as db:
+        remembered = db.scalar(select(Profile.preferences).where(Profile.user_id == user.id))
+        if remembered:
+            content.format = FormatPreferences.model_validate(remembered)
         run = _owned_run(db, user, run_id)
         transition(db, run, "validating")
         draft = db.scalars(

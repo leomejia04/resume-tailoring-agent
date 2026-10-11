@@ -48,6 +48,7 @@ RUN_STATUSES = (
     "drafting",
     "validating",
     "awaiting_review",
+    "approved",
     "failed",
     "cancelled",
 )
@@ -103,6 +104,8 @@ class Profile(Base):
     display_name: Mapped[str | None] = mapped_column(String(100))
     # Prefix for downloaded PDF names, e.g. "LeonardoSuzana".
     filename_prefix: Mapped[str | None] = mapped_column(String(40))
+    # Formatting defaults the user explicitly chose to remember.
+    preferences: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
     lock_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _created_at()
@@ -376,6 +379,7 @@ class DraftVersion(Base):
     __tablename__ = "draft_versions"
     __table_args__ = (
         UniqueConstraint("draft_id", "version", name="uq_draft_versions_draft_version"),
+        UniqueConstraint("id", "owner_id", name="uq_draft_versions_id_owner"),
         _owner_fk(["draft_id", "owner_id"], "drafts", "fk_draft_versions_draft_owner"),
         CheckConstraint(_in("created_by", DRAFT_SOURCES), name="created_by"),
         CheckConstraint("version > 0", name="version_positive"),
@@ -447,3 +451,76 @@ class SpendGlobal(Base):
         Numeric(12, 6), nullable=False, server_default="0"
     )
     spent_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False, server_default="0")
+
+
+# --- Milestone 5: rendered artifacts, approvals, chat revisions ---------------
+
+
+class Artifact(Base):
+    """A rendered PDF (plus its internal DOCX) for one immutable draft version."""
+
+    __tablename__ = "artifacts"
+    __table_args__ = (
+        UniqueConstraint("id", "owner_id", name="uq_artifacts_id_owner"),
+        _owner_fk(
+            ["draft_version_id", "owner_id"], "draft_versions", "fk_artifacts_draft_version_owner"
+        ),
+        CheckConstraint(_in("layout", ("template", "reconstructed")), name="layout"),
+        CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="sha256_hex"),
+        Index("ix_artifacts_owner_version", "owner_id", "draft_version_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    draft_version_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    storage_path: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    docx_storage_path: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    page_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    layout: Mapped[str] = mapped_column(String(16), nullable=False)
+    checks: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    passed: Mapped[bool] = mapped_column(nullable=False)
+    filename: Mapped[str] = mapped_column(String(200), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class Approval(Base):
+    """Binds one draft version to the exact bytes (hash) of its rendered PDF."""
+
+    __tablename__ = "approvals"
+    __table_args__ = (
+        UniqueConstraint("artifact_id", name="uq_approvals_artifact_id"),
+        _owner_fk(["artifact_id", "owner_id"], "artifacts", "fk_approvals_artifact_owner"),
+        _owner_fk(["draft_id", "owner_id"], "drafts", "fk_approvals_draft_owner"),
+        CheckConstraint("artifact_sha256 ~ '^[0-9a-f]{64}$'", name="sha256_hex"),
+        Index("ix_approvals_owner_created", "owner_id", "approved_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    draft_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    draft_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    artifact_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    artifact_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    filename: Mapped[str] = mapped_column(String(200), nullable=False)
+    approved_at: Mapped[datetime] = _created_at()
+
+
+class ChatMessage(Base):
+    """A revision instruction and the outcome summary (never raw model output)."""
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        _owner_fk(["run_id", "owner_id"], "tailoring_runs", "fk_chat_messages_run_owner"),
+        CheckConstraint(_in("role", ("user", "assistant")), name="role"),
+        Index("ix_chat_messages_owner_run", "owner_id", "run_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    content: Mapped[str] = mapped_column(String(2000), nullable=False)
+    draft_version: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[datetime] = _created_at()

@@ -53,3 +53,13 @@ class TailoredDraftOut(_Strict):
     entries: list[EntryOut]
     skills: list[SkillOut]
     omitted_evidence_ids: list[str]
+
+
+class ChatPatchOut(_Strict):
+    """A concise revision: only the entries that change, plus optional headline/summary."""
+
+    reply: str
+    entries: list[EntryOut]
+    headline: str | None
+    change_summary: bool
+    summary: str | None

@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     # Supabase "anon"/publishable key: identifies the project; grants nothing by itself.
     supabase_anon_key: SecretStr | None = None
     storage_bucket: str = "masters"
+    artifacts_bucket: str = "artifacts"
     # Runtime connection as the least-privilege app_backend role (never the service role).
     database_url: SecretStr | None = None
 

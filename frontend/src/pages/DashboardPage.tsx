@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { listRuns } from '../api/client'
+import { approvalDownloadUrl, listApprovals, listRuns } from '../api/client'
 import { messageOf } from '../api/errors'
-import type { RunStatus, RunSummary } from '../api/types'
+import type { ApprovalOut, RunStatus, RunSummary } from '../api/types'
 import { Alert } from '../components/Alert'
 
 const STATUS_LABELS: Record<RunStatus, string> = {
@@ -12,16 +12,21 @@ const STATUS_LABELS: Record<RunStatus, string> = {
   drafting: 'Drafting',
   validating: 'Checking',
   awaiting_review: 'Draft ready',
+  approved: 'Approved',
   failed: 'Needs attention',
   cancelled: 'Cancelled',
 }
 
 export function DashboardPage() {
   const [runs, setRuns] = useState<RunSummary[] | null>(null)
+  const [approvals, setApprovals] = useState<ApprovalOut[]>([])
   const [error, setError] = useState<{ message: string; requestId: string | null } | null>(null)
 
   useEffect(() => {
     const controller = new AbortController()
+    listApprovals(controller.signal)
+      .then(setApprovals)
+      .catch(() => undefined)
     listRuns(controller.signal)
       .then(setRuns)
       .catch((err) => {
@@ -49,6 +54,31 @@ export function DashboardPage() {
           Tailor to a job posting
         </Link>
       </div>
+      {approvals.length > 0 && (
+        <section aria-labelledby="approved-heading">
+          <h2 id="approved-heading" className="mb-2 text-lg font-semibold">
+            Approved resumes
+          </h2>
+          <ul className="divide-y divide-slate-200 rounded-md border border-slate-200 bg-white">
+            {approvals.map((a) => (
+              <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                <span>
+                  <Link to={`/runs/${a.run_id}`} className="font-medium text-indigo-700 underline">
+                    {a.job_title ?? 'Job posting'}
+                    {a.company ? ` at ${a.company}` : ''}
+                  </Link>
+                  <span className="ml-2 text-sm text-slate-600">
+                    version {a.draft_version} · {new Date(a.approved_at).toLocaleDateString()}
+                  </span>
+                </span>
+                <a href={approvalDownloadUrl(a.id)} className="break-all text-sm text-indigo-700 underline" download>
+                  Download {a.filename}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section aria-labelledby="history-heading">
         <h2 id="history-heading" className="mb-2 text-lg font-semibold">
           Recent tailoring

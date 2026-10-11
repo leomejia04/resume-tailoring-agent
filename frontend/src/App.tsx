@@ -13,6 +13,7 @@ import { NotFoundPage } from './pages/NotFoundPage'
 import { PlaceholderPage } from './pages/PlaceholderPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RunPage } from './pages/RunPage'
+import { SettingsPage } from './pages/SettingsPage'
 
 export default function App() {
   return (
@@ -36,10 +37,7 @@ export default function App() {
               <PlaceholderPage title="Tracker" description="Keep track of where you applied and with which resume." />
             }
           />
-          <Route
-            path="settings"
-            element={<PlaceholderPage title="Settings" description="Formatting preferences and data controls." />}
-          />
+          <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Route>

@@ -21,6 +21,8 @@ from app.auth.dependencies import current_user, enforce_limit, get_app_settings,
 from app.auth.tokens import VerifiedUser
 from app.config import Settings
 from app.db.models import (
+    Approval,
+    Artifact,
     ConfirmationQuestion,
     Draft,
     DraftVersion,
@@ -36,6 +38,8 @@ from app.db.models import (
 from app.schemas.errors import ErrorResponse
 from app.schemas.tailoring import (
     AIStatus,
+    ArtifactOut,
+    CurrentApproval,
     DraftOut,
     JobCreate,
     JobOut,
@@ -153,6 +157,8 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
         .order_by(ConfirmationQuestion.created_at, ConfirmationQuestion.requirement_id)
     ).all()
     draft_out = None
+    artifact_out = None
+    approval_out = None
     draft = db.scalars(
         select(Draft).where(Draft.run_id == run.id, Draft.owner_id == user.id)
     ).first()
@@ -165,6 +171,7 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
         content = DraftContent.model_validate(version.content)
         cited = {i for e in content.entries for b in e.bullets for i in b.evidence_ids}
         cited |= {i for s in content.skills for i in s.evidence_ids}
+        cited |= {o.evidence_id for o in content.omitted}  # so the editor can add facts back
         sources = {}
         if cited:
             for record, ev in db.execute(
@@ -181,6 +188,38 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
                 sources[record.id] = SourceFact(
                     text=ev.text, entry=ev.entry, experience_type=ev.experience_type
                 )
+        artifact = db.scalars(
+            select(Artifact)
+            .where(Artifact.draft_version_id == version.id, Artifact.owner_id == user.id)
+            .order_by(Artifact.created_at.desc())
+        ).first()
+        if artifact is not None:
+            artifact_out = ArtifactOut(
+                id=artifact.id,
+                draft_version=version.version,
+                sha256=artifact.sha256,
+                page_count=artifact.page_count,
+                layout=artifact.layout,  # type: ignore[arg-type]
+                passed=artifact.passed,
+                checks=artifact.checks,
+                filename=artifact.filename,
+                created_at=artifact.created_at,
+            )
+        approval = db.scalars(
+            select(Approval).where(
+                Approval.draft_id == draft.id,
+                Approval.draft_version == version.version,
+                Approval.owner_id == user.id,
+            )
+        ).first()
+        if approval is not None:
+            approval_out = CurrentApproval(
+                id=approval.id,
+                draft_version=approval.draft_version,
+                artifact_id=approval.artifact_id,
+                filename=approval.filename,
+                approved_at=approval.approved_at,
+            )
         draft_out = DraftOut(
             version=version.version,
             content=content,
@@ -221,6 +260,8 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
             for q in questions
         ],
         draft=draft_out,
+        artifact=artifact_out,
+        approval=approval_out,
         usage=RunUsage(
             calls=usage[0],
             cost_usd=Decimal(usage[1]),

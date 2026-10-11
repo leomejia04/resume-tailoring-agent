@@ -1,5 +1,11 @@
 import type {
   AIStatus,
+  ApprovalOut,
+  ChatMessage,
+  EditOperation,
+  FormatPreferences,
+  VersionOut,
+  VersionSummary,
   CsrfResponse,
   JobOut,
   Question,
@@ -278,3 +284,67 @@ export const generateDraft = (runId: string) =>
 
 export const cancelRun = (runId: string) =>
   apiRequest<RunOut>(`/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' })
+
+// --- Review, rendering, approval --------------------------------------------
+
+const runPath = (runId: string) => `/runs/${encodeURIComponent(runId)}`
+
+export const editDraft = (runId: string, expectedVersion: number, operations: EditOperation[]) =>
+  apiRequest<RunOut>(`${runPath(runId)}/draft/edits`, {
+    method: 'POST',
+    body: { expected_version: expectedVersion, operations },
+  })
+
+export const restoreVersion = (runId: string, version: number, expectedVersion: number) =>
+  apiRequest<RunOut>(`${runPath(runId)}/draft/restore`, {
+    method: 'POST',
+    body: { version, expected_version: expectedVersion },
+  })
+
+export const regenerateEntry = (runId: string, entryRef: string, expectedVersion: number) =>
+  apiRequest<RunOut>(`${runPath(runId)}/draft/regenerate`, {
+    method: 'POST',
+    body: { entry_ref: entryRef, expected_version: expectedVersion },
+    timeoutMs: AI_TIMEOUT_MS,
+  })
+
+export const chatRevision = (runId: string, message: string, expectedVersion: number) =>
+  apiRequest<{ reply: string; new_version: number | null; run: RunOut }>(`${runPath(runId)}/draft/chat`, {
+    method: 'POST',
+    body: { message, expected_version: expectedVersion },
+    timeoutMs: AI_TIMEOUT_MS,
+  })
+
+export const listChat = (runId: string, signal?: AbortSignal) =>
+  apiRequest<ChatMessage[]>(`${runPath(runId)}/chat`, { signal })
+
+export const listVersions = (runId: string, signal?: AbortSignal) =>
+  apiRequest<VersionSummary[]>(`${runPath(runId)}/draft/versions`, { signal })
+
+export const getVersion = (runId: string, version: number, signal?: AbortSignal) =>
+  apiRequest<VersionOut>(`${runPath(runId)}/draft/versions/${version}`, { signal })
+
+// Rendering runs LibreOffice and may drop bullets over several rounds.
+export const renderDraft = (runId: string) =>
+  apiRequest<RunOut>(`${runPath(runId)}/render`, { method: 'POST', timeoutMs: AI_TIMEOUT_MS })
+
+export const approveDraft = (runId: string, draftVersion: number, artifactId: string, sha256: string) =>
+  apiRequest<RunOut>(`${runPath(runId)}/approve`, {
+    method: 'POST',
+    body: { draft_version: draftVersion, artifact_id: artifactId, artifact_sha256: sha256 },
+  })
+
+export const listApprovals = (signal?: AbortSignal) => apiRequest<ApprovalOut[]>('/approvals', { signal })
+
+export const artifactPdfUrl = (id: string) => `${API_BASE}/artifacts/${encodeURIComponent(id)}/pdf`
+export const artifactPreviewUrl = (id: string) => `${API_BASE}/artifacts/${encodeURIComponent(id)}/preview.png`
+export const approvalDownloadUrl = (id: string) => `${API_BASE}/approvals/${encodeURIComponent(id)}/download`
+
+export const getPreferences = (signal?: AbortSignal) =>
+  apiRequest<{ preferences: FormatPreferences; lock_version: number }>('/profile/preferences', { signal })
+
+export const rememberPreferences = (preferences: FormatPreferences, expectedVersion: number) =>
+  apiRequest<{ preferences: FormatPreferences; lock_version: number }>('/profile/preferences', {
+    method: 'PUT',
+    body: { preferences, expected_version: expectedVersion },
+  })

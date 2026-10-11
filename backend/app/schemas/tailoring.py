@@ -77,6 +77,26 @@ class DraftOut(BaseModel):
     sources: dict[uuid.UUID, SourceFact]
 
 
+class ArtifactOut(BaseModel):
+    id: uuid.UUID
+    draft_version: int
+    sha256: str
+    page_count: int
+    layout: Literal["template", "reconstructed"]
+    passed: bool
+    checks: dict
+    filename: str
+    created_at: datetime
+
+
+class CurrentApproval(BaseModel):
+    id: uuid.UUID
+    draft_version: int
+    artifact_id: uuid.UUID
+    filename: str
+    approved_at: datetime
+
+
 class RunUsage(BaseModel):
     calls: int
     cost_usd: Decimal
@@ -95,6 +115,8 @@ class RunOut(BaseModel):
     analysis_model: str | None
     questions: list[QuestionOut]
     draft: DraftOut | None
+    artifact: ArtifactOut | None = None
+    approval: CurrentApproval | None = None
     usage: RunUsage
     created_at: datetime
     updated_at: datetime

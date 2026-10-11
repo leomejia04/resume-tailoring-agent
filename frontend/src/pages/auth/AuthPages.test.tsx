@@ -17,7 +17,11 @@ function renderAt(path: string) {
 }
 
 const signedOut = { 'GET /auth/me': () => errorResponse(401, 'unauthenticated') }
-const health = { 'GET /health': () => jsonResponse(200, { status: 'ok', version: '0.1.0' }) }
+const health = {
+  'GET /health': () => jsonResponse(200, { status: 'ok', version: '0.1.0' }),
+  'GET /runs': () => jsonResponse(200, []),
+  'GET /approvals': () => jsonResponse(200, []),
+}
 
 describe('Sign in', () => {
   it('signs in and returns to the page the user wanted', async () => {

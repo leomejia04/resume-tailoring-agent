@@ -3,7 +3,7 @@
 A hosted, multi-user application for creating truthful, tailored, one-page PDF
 resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md).
 
-**Current state:** milestones 1-3 are complete; milestone 4 (AI tailoring baseline) is built and tested with a demo provider and mocked model, pending a live OpenAI run.
+**Current state:** milestones 1-3 and 5 are complete; milestone 4 (AI tailoring baseline) is built and tested with a demo provider and mocked model, pending a live OpenAI run.
 
 - Document proof: a fictional master DOCX is edited in a copy with formatting
   preserved, rendered to PDF in a sandboxed LibreOffice container, and inspected.
@@ -18,12 +18,18 @@ resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md
   questions about missing skills, and grounded drafts in which every bullet
   cites confirmed facts. Deterministic checks remove unsupported numbers,
   tools, dates, and titles; costs are recorded and capped per user and per day.
+- Review and export: edit, reorder, add or remove facts, rewrite a section,
+  ask for changes in chat (all re-checked against confirmed facts), compare
+  and restore versions, set formatting preferences, render the real one-page
+  PDF in your own DOCX design (or a labeled rebuilt layout), approve the exact
+  PDF, and download it as `Prefix_Position_Company_CV.pdf`.
 
 ## Repository layout
 
 ```
 backend/app/ai/           model clients (OpenAI, demo), prompts, pricing, budgets
-backend/app/tailoring/    job analysis, gaps/questions, drafting workflow, validation
+backend/app/tailoring/    job analysis, gaps/questions, drafting, validation, review/approval
+backend/app/render/       template-aware and reconstructed DOCX rendering, one-page fitting
 backend/app/api/          FastAPI routes (/api/v1), error envelope, middleware
 backend/app/auth/         session cookies, JWT verification, CSRF, rate limits
 backend/app/db/           SQLAlchemy models and per-user sessions

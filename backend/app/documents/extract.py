@@ -51,6 +51,9 @@ class Candidate:
     position: int
     metrics: list[str] = field(default_factory=list)
     suggested_type: str = "unclassified"
+    # DOCX only: where the fact and its entry line live (used by the renderer).
+    paragraph_index: int | None = None
+    entry_paragraph_index: int | None = None
 
 
 @dataclass
@@ -58,6 +61,8 @@ class ExtractionResult:
     candidates: list[Candidate]
     notes: list[str]
     status: str  # complete | partial | failed
+    # Name/contact lines before the first section heading (identity, not evidence).
+    header_lines: list[str] = field(default_factory=list)
 
 
 def classify_heading(text: str) -> str | None:
@@ -112,27 +117,31 @@ class _Builder:
         self.dates: str | None = None
         self.entry_used = True
         self.candidates: list[Candidate] = []
+        self.cursor: int | None = None  # paragraph index of the line being processed
+        self.entry_index: int | None = None
 
     def _close_entry(self) -> None:
         # An entry line with nothing under it (e.g. a degree) is itself a fact.
         if self.entry and not self.entry_used:
-            self.add(self.entry)
+            self.add(self.entry, paragraph_index=self.entry_index)
         self.entry_used = True
 
     def heading(self, section: str) -> None:
         self._close_entry()
         self.section, self.entry, self.dates = section, None, None
+        self.entry_index = None
 
     def entry_line(self, line: str) -> None:
         self._close_entry()
         self.entry, self.dates = split_entry(line)
         self.entry = self.entry[:300]
+        self.entry_index = self.cursor
         self.entry_used = False
 
     def finish(self) -> None:
         self._close_entry()
 
-    def add(self, text: str) -> None:
+    def add(self, text: str, paragraph_index: int | None = None) -> None:
         self.entry_used = True
         text = re.sub(r"\s+", " ", text).strip()
         if not text or len(self.candidates) >= MAX_CANDIDATES:
@@ -146,6 +155,8 @@ class _Builder:
                 position=len(self.candidates),
                 metrics=find_metrics(text),
                 suggested_type=suggest_type(self.section, self.entry),
+                paragraph_index=paragraph_index if paragraph_index is not None else self.cursor,
+                entry_paragraph_index=self.entry_index,
             )
         )
 
@@ -154,15 +165,18 @@ def extract_docx(data: bytes) -> ExtractionResult:
     document = Document(io.BytesIO(data))
     builder = _Builder()
     notes: list[str] = []
-    for paragraph in body_paragraphs(document):
+    header: list[str] = []
+    for index, paragraph in enumerate(body_paragraphs(document)):
         text = paragraph.text.strip()
         if not text:
             continue
+        builder.cursor = index
         section = None if is_bullet(document, paragraph) else classify_heading(text)
         if section:
             builder.heading(section)
         elif builder.section is None:
-            continue  # name and contact lines are identity, not evidence
+            header.append(text[:300])  # name and contact lines are identity, not evidence
+            continue
         elif is_bullet(document, paragraph) or builder.section in _LIST_SECTIONS:
             builder.add(text)
         else:
@@ -175,8 +189,10 @@ def extract_docx(data: bytes) -> ExtractionResult:
             "No bullet points or section headings were recognized. "
             "Check that the resume uses standard headings."
         )
-        return ExtractionResult([], notes, "partial")
-    return ExtractionResult(builder.candidates, notes, "partial" if notes else "complete")
+        return ExtractionResult([], notes, "partial", header[:6])
+    return ExtractionResult(
+        builder.candidates, notes, "partial" if notes else "complete", header[:6]
+    )
 
 
 def extract_pdf(data: bytes) -> ExtractionResult:
@@ -200,6 +216,7 @@ def extract_pdf(data: bytes) -> ExtractionResult:
         )
 
     current: list[str] = []
+    header: list[str] = []
     bullet_x: float | None = None
 
     def flush() -> None:
@@ -218,6 +235,7 @@ def extract_pdf(data: bytes) -> ExtractionResult:
             flush()
             builder.heading(section)
         elif builder.section is None:
+            header.append(text[:300])
             continue
         elif is_bullet_line:
             flush()
@@ -235,4 +253,4 @@ def extract_pdf(data: bytes) -> ExtractionResult:
     builder.finish()
     if not builder.candidates:
         notes.append("No bullet points were recognized.")
-    return ExtractionResult(builder.candidates, notes, "partial")
+    return ExtractionResult(builder.candidates, notes, "partial", header[:6])

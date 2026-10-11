@@ -2,9 +2,13 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 
 import { Link, useParams } from 'react-router'
 import { answerQuestion, cancelRun, generateDraft, getAIStatus, getRun, listEvidence } from '../api/client'
 import { messageOf } from '../api/errors'
-import type { AIStatus, DraftOut, EvidenceItem, ExperienceType, Question, RunOut, RunStatus } from '../api/types'
+import type { AIStatus, EvidenceItem, ExperienceType, Question, RunOut, RunStatus } from '../api/types'
 import { AIBadge } from '../components/AIBadge'
 import { Alert } from '../components/Alert'
+import { DraftEditor } from './run/DraftEditor'
+import { ExportPanel } from './run/ExportPanel'
+import { ChatPanel, FormatPanel } from './run/RevisePanel'
+import { VersionHistory } from './run/VersionHistory'
 
 const STATUS_LABELS: Record<RunStatus, string> = {
   analyzing: 'Reading the posting',
@@ -13,6 +17,7 @@ const STATUS_LABELS: Record<RunStatus, string> = {
   drafting: 'Drafting',
   validating: 'Checking the draft',
   awaiting_review: 'Draft ready for review',
+  approved: 'Approved',
   failed: 'Something went wrong',
   cancelled: 'Cancelled',
 }
@@ -29,7 +34,7 @@ const KIND_LABELS: Record<Exclude<ExperienceType, 'unclassified'>, string> = {
   personal: 'Personal project or activity',
   other: 'Other',
 }
-const DRAFTABLE: RunStatus[] = ['awaiting_confirmation', 'ready', 'awaiting_review', 'failed']
+const DRAFTABLE: RunStatus[] = ['awaiting_confirmation', 'ready', 'awaiting_review', 'approved', 'failed']
 
 function failureMessage(code: string | null): string {
   if (!code) return 'The last step failed. You can try again.'
@@ -201,77 +206,6 @@ function QuestionCard({
         </button>
       </form>
     </li>
-  )
-}
-
-function DraftView({ draft }: { draft: DraftOut }) {
-  const { content, validation } = draft
-  const warnings = validation.issues.filter((i) => i.severity === 'warning')
-  return (
-    <div className="space-y-4">
-      <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="text-xl font-semibold">{content.headline}</p>
-        {content.summary && <p className="mt-2 text-slate-700">{content.summary}</p>}
-        {content.entries.map((entry) => (
-          <section key={entry.ref} className="mt-5" aria-label={entry.entry ?? 'Entry'}>
-            <div className="flex flex-wrap justify-between gap-2">
-              <h3 className="font-semibold">{entry.entry}</h3>
-              {entry.date_text && <p className="text-sm text-slate-600">{entry.date_text}</p>}
-            </div>
-            <ul className="mt-2 list-disc space-y-2 pl-5">
-              {entry.bullets.map((bullet, index) => (
-                <li key={index}>
-                  {bullet.text}
-                  <details className="text-sm text-slate-600">
-                    <summary className="cursor-pointer">Based on</summary>
-                    <ul className="mt-1 list-[circle] pl-5">
-                      {bullet.evidence_ids.map((evidenceId) => (
-                        <li key={evidenceId}>{draft.sources[evidenceId]?.text ?? 'A confirmed fact'}</li>
-                      ))}
-                    </ul>
-                  </details>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-        {content.skills.length > 0 && (
-          <section className="mt-5" aria-label="Skills">
-            <h3 className="font-semibold">Skills</h3>
-            {content.skills.map((skill, index) => (
-              <p key={index}>{skill.text}</p>
-            ))}
-          </section>
-        )}
-      </div>
-      <div className="rounded-lg border border-slate-200 bg-white p-4 text-sm">
-        <p className="font-medium">
-          {validation.passed ? 'Every statement is backed by your confirmed facts.' : 'Some statements were removed.'}
-        </p>
-        {validation.repaired && <p className="text-slate-600">The first draft was corrected once automatically.</p>}
-        {validation.removed.length > 0 && (
-          <>
-            <p className="mt-2 text-slate-700">Removed because they were not supported by your facts:</p>
-            <ul className="list-disc pl-5 text-slate-600">
-              {validation.removed.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </>
-        )}
-        {warnings.length > 0 && (
-          <ul className="mt-2 list-disc pl-5 text-amber-800">
-            {warnings.map((w, i) => (
-              <li key={i}>{w.message}</li>
-            ))}
-          </ul>
-        )}
-        <p className="mt-2 text-slate-600">
-          {content.omitted.length} confirmed facts were left out to keep the resume focused. Your experience bank still has
-          all of them.
-        </p>
-      </div>
-    </div>
   )
 }
 
@@ -464,11 +398,15 @@ export function RunPage() {
           </h2>
           <p className="mb-3 text-sm text-slate-600">
             {run.draft.model === 'demo-deterministic-v1' ? 'Produced by demo rules, not AI.' : `Written by ${run.draft.model}.`}{' '}
-            AI cost for this run: ${Number(run.usage.cost_usd).toFixed(4)}. Editing and PDF export come next.
+            AI cost for this run: ${Number(run.usage.cost_usd).toFixed(4)}.
           </p>
-          <DraftView draft={run.draft} />
+          <DraftEditor run={run} draft={run.draft} onRun={setRun} canRegenerate={ai?.provider !== 'disabled'} />
         </section>
       )}
+      {run.draft && <ExportPanel run={run} onRun={setRun} />}
+      {run.draft && <FormatPanel key={run.draft.version} run={run} onRun={setRun} />}
+      {run.draft && <ChatPanel run={run} onRun={setRun} enabled={ai?.provider === 'openai'} />}
+      {run.draft && <VersionHistory run={run} onRun={setRun} />}
     </div>
   )
 }

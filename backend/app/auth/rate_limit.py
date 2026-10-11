@@ -39,6 +39,8 @@ UPLOAD_USER = Limit("upload-user", 20, 3600)
 # Paid model calls (also bounded by the daily spending limits).
 AI_RUN_USER = Limit("ai-run-user", 20, 3600)
 AI_DRAFT_USER = Limit("ai-draft-user", 30, 3600)
+# PDF rendering is CPU heavy (LibreOffice in a container).
+RENDER_USER = Limit("render-user", 40, 3600)
 
 
 class RateLimitedError(Exception):

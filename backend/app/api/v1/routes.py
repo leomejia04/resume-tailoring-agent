@@ -16,6 +16,7 @@ from app.api.v1 import (
     evidence_routes,
     masters_routes,
     profile_routes,
+    review_routes,
     tailoring_routes,
 )
 from app.auth.dependencies import current_user
@@ -98,3 +99,4 @@ router.include_router(profile_routes.router)
 router.include_router(masters_routes.router)
 router.include_router(evidence_routes.router)
 router.include_router(tailoring_routes.router)
+router.include_router(review_routes.router)

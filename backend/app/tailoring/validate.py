@@ -76,6 +76,41 @@ def _unsupported_numbers(text: str, support: str) -> list[str]:
     return missing
 
 
+def check_text(text: str, support: str, where: str, terms: list[str]) -> list[ValidationIssue]:
+    """Public form of the claim check, used for direct edits and chat patches."""
+    issues: list[ValidationIssue] = []
+    _check_claim(text, support, where, terms, issues)
+    if len(text) > MAX_BULLET_CHARS or not text.strip():
+        issues.append(
+            ValidationIssue(
+                code="bad_length",
+                severity="error",
+                where=where,
+                message="Text is empty or too long.",
+            )
+        )
+    return issues
+
+
+def headline_issues(headline: str, allowed: str, terms: list[str]) -> list[ValidationIssue]:
+    issues = check_text(headline, allowed, "headline", terms)
+    words = _headline_words_supported(headline, allowed)
+    if words:
+        issues.append(
+            ValidationIssue(
+                code="unsupported_headline",
+                severity="error",
+                where="headline",
+                message=f"Uses {', '.join(words)}; the role title and facts lack it.",
+            )
+        )
+    return issues
+
+
+def requirement_terms(analysis: AnalysisContent) -> list[str]:
+    return _requirement_terms(analysis)
+
+
 def _requirement_terms(analysis: AnalysisContent) -> list[str]:
     seen: dict[str, str] = {}
     for requirement in analysis.requirements:

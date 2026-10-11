@@ -31,11 +31,11 @@ class StorageRejectedError(RuntimeError):
 
 
 class UserStorage:
-    def __init__(self, settings: Settings, access_token: str) -> None:
+    def __init__(self, settings: Settings, access_token: str, bucket: str | None = None) -> None:
         if settings.supabase_anon_key is None:
             raise StorageUnavailableError("SUPABASE_ANON_KEY is not set")
         self._base = f"{settings.supabase_url}/storage/v1/object"
-        self._bucket = settings.storage_bucket
+        self._bucket = bucket or settings.storage_bucket
         self._headers = {
             "apikey": settings.supabase_anon_key.get_secret_value(),
             "Authorization": f"Bearer {access_token}",

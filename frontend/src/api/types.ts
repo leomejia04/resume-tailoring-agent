@@ -215,6 +215,7 @@ export interface DraftContent {
   entries: DraftEntry[]
   skills: { text: string; evidence_ids: string[] }[]
   omitted: { evidence_id: string; reason: 'not_selected' | 'failed_validation' }[]
+  format?: FormatPreferences
 }
 
 export interface ValidationIssue {
@@ -250,6 +251,7 @@ export type RunStatus =
   | 'drafting'
   | 'validating'
   | 'awaiting_review'
+  | 'approved'
   | 'failed'
   | 'cancelled'
 
@@ -264,6 +266,8 @@ export interface RunOut {
   analysis_model: string | null
   questions: Question[]
   draft: DraftOut | null
+  artifact?: ArtifactOut | null
+  approval?: CurrentApproval | null
   usage: { calls: number; cost_usd: string; input_tokens: number; output_tokens: number }
   created_at: string
   updated_at: string
@@ -284,4 +288,86 @@ export interface AIStatus {
   disclosure: string
   user_daily_budget_usd: string
   spent_today_usd: string
+}
+
+// --- Review, rendering, approval (mirrors backend/app/api/v1/review_routes.py) ---
+
+export interface FormatPreferences {
+  max_bullets_per_entry: number
+  project_bullets: number
+  bold_project_technologies: boolean
+  languages_on_own_line: boolean
+  show_headline: boolean
+  locked_entries: string[]
+}
+
+export interface ArtifactOut {
+  id: string
+  draft_version: number
+  sha256: string
+  page_count: number
+  layout: 'template' | 'reconstructed'
+  passed: boolean
+  checks: {
+    page_count: number
+    missing_phrases: string[]
+    out_of_order: string[]
+    clipped: string[]
+    dropped_to_fit: string[]
+    capped_by_preference: string[]
+    notes: string[]
+    searchable: boolean
+  }
+  filename: string
+  created_at: string
+}
+
+export interface CurrentApproval {
+  id: string
+  draft_version: number
+  artifact_id: string
+  filename: string
+  approved_at: string
+}
+
+export interface VersionSummary {
+  version: number
+  created_by: string
+  created_at: string
+  passed: boolean
+  model: string | null
+}
+
+export interface VersionOut extends VersionSummary {
+  content: DraftContent
+  validation: ValidationReport
+}
+
+export type EditOperation =
+  | { op: 'update_bullet'; entry_ref: string; index: number; text: string }
+  | { op: 'remove_bullet'; entry_ref: string; index: number }
+  | { op: 'move_bullet'; entry_ref: string; index: number; to: number }
+  | { op: 'add_fact'; evidence_id: string }
+  | { op: 'update_skill'; index: number; text: string }
+  | { op: 'remove_skill'; index: number }
+  | { op: 'update_headline'; text: string }
+  | { op: 'update_summary'; text: string | null }
+  | { op: 'update_format'; format: FormatPreferences }
+
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  draft_version: number | null
+  created_at: string
+}
+
+export interface ApprovalOut {
+  id: string
+  run_id: string
+  job_title: string | null
+  company: string | null
+  filename: string
+  draft_version: number
+  artifact_sha256: string
+  approved_at: string
 }

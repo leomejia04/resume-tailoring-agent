@@ -20,6 +20,7 @@ from pydantic import BaseModel, ValidationError
 from app.ai.pricing import Usage
 from app.ai.schemas import (
     BulletOut,
+    ChatPatchOut,
     EntryOut,
     JobAnalysisOut,
     RequirementOut,
@@ -193,6 +194,14 @@ class DemoClient:
             output: BaseModel = self._analysis(payload)
         elif schema is TailoredDraftOut:
             output = self._draft(payload)
+        elif schema is ChatPatchOut:
+            output = ChatPatchOut(
+                reply="Demo mode cannot follow written instructions. Use the edit tools instead.",
+                entries=[],
+                headline=None,
+                change_summary=False,
+                summary=None,
+            )
         else:  # pragma: no cover - programming error
             raise LLMError("invalid_output")
         return LLMResult(output=output, usage=Usage(), latency_ms=0, model=self.model)  # type: ignore[arg-type]

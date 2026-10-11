@@ -84,6 +84,18 @@ def reserve(db: Session, settings: Settings, owner_id: uuid.UUID, amount: Decima
     return Reservation(day=day, amount=amount)
 
 
+def release(db: Session, owner_id: uuid.UUID, reservation: Reservation) -> None:
+    """Return a reservation that was never used (no model call, so no usage event)."""
+    params = {
+        "owner": owner_id,
+        "day": reservation.day,
+        "reserved": reservation.amount,
+        "actual": Decimal(0),
+    }
+    db.execute(_SETTLE_USER, params)
+    db.execute(_SETTLE_APP, params)
+
+
 def settle(
     db: Session,
     owner_id: uuid.UUID,

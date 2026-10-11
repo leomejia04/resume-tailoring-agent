@@ -15,7 +15,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import create_engine, text
 
-from app.ai.budget import BudgetExceededError, reserve
+from app.ai.budget import BudgetExceededError, release, reserve
 from app.ai.client import DemoClient, LLMError, LLMResult
 from app.ai.pricing import Usage
 from app.ai.schemas import BulletOut, EntryOut, JobAnalysisOut, TailoredDraftOut
@@ -373,28 +373,36 @@ def test_spending_limit_blocks_paid_calls(monkeypatch, base_settings, docx_bytes
 
 def test_budget_reservations_are_atomic_under_concurrency(base_settings, demo_app):
     account = new_account(demo_app)
-    settings = Settings(
-        _env_file=None, **{**base_settings.model_dump(), "user_daily_budget_usd": Decimal("1.00")}
-    )
+    # A high app-wide cap isolates the per-user limit from the shared daily counter.
+    overrides = {"user_daily_budget_usd": Decimal("1.00"), "app_daily_budget_usd": Decimal("10000")}
+    settings = Settings(_env_file=None, **{**base_settings.model_dump(), **overrides})
     user = VerifiedUser(id=account.id, email=None, access_token="")
     outcomes = []
+    reservations = []
     barrier = threading.Barrier(5)
 
     def attempt():
         barrier.wait()
         try:
             with user_db(settings, user) as db:
-                reserve(db, settings, user.id, Decimal("0.40"))
+                reservations.append(reserve(db, settings, user.id, Decimal("0.40")))
             outcomes.append("reserved")
-        except BudgetExceededError:
-            outcomes.append("refused")
+        except BudgetExceededError as exc:
+            outcomes.append(f"refused:{exc.scope}")
 
     threads = [threading.Thread(target=attempt) for _ in range(5)]
     for t in threads:
         t.start()
     for t in threads:
         t.join()
-    assert sorted(outcomes) == ["refused"] * 3 + ["reserved"] * 2  # 2 x 0.40 <= 1.00 < 3 x 0.40
+    try:
+        # 2 x 0.40 <= 1.00 < 3 x 0.40
+        assert sorted(outcomes) == ["refused:user"] * 3 + ["reserved"] * 2
+    finally:
+        # Reservations also count against the app-wide day; never leak them across runs.
+        with user_db(settings, user) as db:
+            for reservation in reservations:
+                release(db, user.id, reservation)
 
 
 def test_new_tables_enforce_rls_for_the_runtime_role(base_settings, demo_app, docx_bytes):

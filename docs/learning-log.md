@@ -239,3 +239,32 @@ Short notes on concepts introduced while building, in plain language.
   queuing the improvement in one commit means there is no moment where one
   happened and the other was lost.
 
+
+### 6e: manual application tracker
+
+- **Let the schema refuse what must never happen.** The tracker links an
+  entry to an approval with a composite foreign key on (approval, owner).
+  Even a buggy query that forgot the owner check cannot point Alice's entry
+  at Bob's resume: the database has no matching row to accept. The API still
+  checks first, so the user sees "Choose one of your approved resumes"
+  rather than a database error.
+- **Optimistic concurrency in one statement.** `UPDATE ... WHERE id = :id AND
+  lock_version = :seen` either changes exactly one row or none. "None" means
+  someone else changed it since you loaded it (409) or it is gone (404). No
+  locks are held while the user types, and no tab silently wins.
+- **Count-then-insert needs a lock.** "Refuse after 1000 entries" is two steps
+  (count, then insert), and two requests can both count 999. A transaction
+  advisory lock per owner makes the steps happen one request at a time. The
+  test proves it the honest way: with the lock removed, it fails.
+- **Accessible names are computed, not seen.** A visually hidden
+  `<span> Data Analyst</span>` after "Edit" produced the name
+  "EditData Analyst": the leading space was dropped. An explicit `aria-label`
+  that starts with the visible word ("Edit Data Analyst at ...") is
+  unambiguous for screen readers and voice control.
+- **Effects that change the URL can re-trigger themselves.** Removing a query
+  parameter inside a data-loading effect changed the router's setter, re-ran
+  the effect, and reloaded the form. The fix: load once, and change the URL
+  from an event handler (when the form closes).
+- **Dates without times.** `new Date('2026-10-01')` means midnight UTC, which
+  is still September 30 in the Americas. A calendar date is shown by building
+  it from its parts in local time.

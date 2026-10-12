@@ -1,5 +1,8 @@
 import type {
   AIStatus,
+  ApplicationInput,
+  ApplicationOut,
+  ApplicationStatus,
   ApprovalOut,
   ChatMessage,
   EditOperation,
@@ -359,3 +362,24 @@ export const rememberPreferences = (preferences: FormatPreferences, expectedVers
     method: 'PUT',
     body: { preferences, expected_version: expectedVersion },
   })
+
+// --- Application tracker -------------------------------------------------------
+
+const applicationPath = (id: string) => `/applications/${encodeURIComponent(id)}`
+
+export const listApplications = (status?: ApplicationStatus, signal?: AbortSignal) =>
+  apiRequest<ApplicationOut[]>(status ? `/applications?status=${encodeURIComponent(status)}` : '/applications', {
+    signal,
+  })
+
+export const createApplication = (input: ApplicationInput) =>
+  apiRequest<ApplicationOut>('/applications', { method: 'POST', body: input })
+
+export const updateApplication = (id: string, input: ApplicationInput, expectedVersion: number) =>
+  apiRequest<ApplicationOut>(applicationPath(id), {
+    method: 'PUT',
+    body: { ...input, expected_version: expectedVersion },
+  })
+
+export const deleteApplication = (id: string, expectedVersion: number) =>
+  apiRequest<void>(`${applicationPath(id)}?expected_version=${expectedVersion}`, { method: 'DELETE' })

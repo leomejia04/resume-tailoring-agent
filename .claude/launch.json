@@ -28,6 +28,38 @@
         "frontend"
       ],
       "port": 5173
+    },
+    {
+      "name": "backend-alt",
+      "runtimeExecutable": "backend/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "--app-dir",
+        "backend",
+        "app.main:create_app",
+        "--factory",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8001",
+        "--no-server-header",
+        "--no-access-log"
+      ],
+      "env": { "TRUSTED_ORIGINS": "http://127.0.0.1:5174" },
+      "port": 8001
+    },
+    {
+      "name": "frontend-alt",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "frontend/node_modules/vite/bin/vite.js",
+        "frontend",
+        "--port",
+        "5174"
+      ],
+      "env": { "DEV_API_PORT": "8001" },
+      "port": 5174
     }
   ]
 }

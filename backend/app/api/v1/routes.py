@@ -18,6 +18,7 @@ from app.api.v1 import (
     profile_routes,
     review_routes,
     tailoring_routes,
+    tracker_routes,
 )
 from app.auth.dependencies import current_user
 from app.auth.tokens import VerifiedUser
@@ -100,3 +101,4 @@ router.include_router(masters_routes.router)
 router.include_router(evidence_routes.router)
 router.include_router(tailoring_routes.router)
 router.include_router(review_routes.router)
+router.include_router(tracker_routes.router)

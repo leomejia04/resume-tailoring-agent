@@ -3,7 +3,7 @@
 A hosted, multi-user application for creating truthful, tailored, one-page PDF
 resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md).
 
-**Current state:** milestones 1-5 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 is in progress: ATS match estimates are scored, saved, and required for approval (6a-6b), and slow or paid steps run in a durable background worker with bounded retries and crash recovery (6c), and each new draft gets up to two automatic, fact-checked attempts to close ATS gaps the user's confirmed facts support (6d); the application tracker is next.
+**Current state:** milestones 1-6 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 added saved ATS match estimates required for approval (6a-6b), a durable background worker with bounded retries and crash recovery (6c), up to two automatic, fact-checked improvement attempts per run (6d), and a private manual application tracker (6e). Measured retrieval (RAG, milestone 7) is next.
 
 - Document proof: a fictional master DOCX is edited in a copy with formatting
   preserved, rendered to PDF in a sandboxed LibreOffice container, and inspected.
@@ -32,6 +32,10 @@ resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md
   supported facts the draft left out (skill lines word for word, entries as a
   checked patch). A version is saved only if the estimate rises without losing
   other matches or repeating terms, and the panel says why it stopped (ADR 0008).
+- Application tracker: a private list of where you applied (company, role,
+  posting link, date, status, notes), each optionally linked to the exact
+  approved resume you sent. Edits and deletes are protected against stale tabs;
+  nothing in it is fetched, sent to AI providers, or used as evidence (ADR 0009).
 
 ## Repository layout
 
@@ -184,6 +188,12 @@ Windows tips:
   scanning (e.g. Norton) is re-signing traffic: set `USE_OS_TRUST_STORE=true`.
 - Stop `npm run dev` before running `npm ci`: Windows locks native modules
   that a running process has loaded, and `npm ci` fails with `EPERM`.
+- A second local stack can run beside the default one (for example while
+  another terminal holds ports 8000 and 5173): start the API with
+  `TRUSTED_ORIGINS=http://127.0.0.1:5174` and `--port 8001`, then the frontend
+  with `DEV_API_PORT=8001 npm run dev -- --port 5174`, and open
+  http://127.0.0.1:5174. `.claude/launch.json` has the same pair as
+  `backend-alt` and `frontend-alt`. Do not run a second worker during tests.
 
 ## Checks
 
@@ -268,6 +278,7 @@ Environment variables (see [.env.example](.env.example)):
 | `MAX_ACTIVE_JOBS_PER_USER` / `MAX_RUNNING_JOBS_PER_USER` | `4` / `1` | Per-user queue limit (429) and fair-share running limit |
 | `GRANT_TTL_SECONDS` | `3600` | Lifetime of signed download URLs handed to a job |
 | `AUTO_IMPROVE` | `true` | Queue bounded automatic ATS improvement after each draft (at most 2 attempts per run, ADR 0008); users can still start it from the run page |
+| `MAX_APPLICATIONS_PER_USER` | `1000` | Application tracker entries per user (409 `tracker_full` beyond it) |
 | `PRICE_*_PER_MTOK` | official rates | Used for cost accounting |
 
 ## Updating dependencies

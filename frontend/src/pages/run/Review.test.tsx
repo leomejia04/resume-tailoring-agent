@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
+import { MemoryRouter } from 'react-router'
 import { describe, expect, it } from 'vitest'
 import type { ArtifactOut, AtsOverview, RunJob, RunOut } from '../../api/types'
 import { errorResponse, jsonResponse, routeFetch } from '../../test/http'
@@ -127,7 +128,11 @@ describe('ExportPanel', () => {
           }),
         ),
     })
-    render(<Harness initial={makeRun()}>{(run, set) => <ExportPanel run={run} onRun={set} />}</Harness>)
+    render(
+      <MemoryRouter>
+        <Harness initial={makeRun()}>{(run, set) => <ExportPanel run={run} onRun={set} />}</Harness>
+      </MemoryRouter>,
+    )
     const user = userEvent.setup()
     await user.click(screen.getByRole('button', { name: 'Create PDF' }))
 
@@ -141,6 +146,7 @@ describe('ExportPanel', () => {
     await user.click(screen.getByRole('button', { name: 'Approve this PDF' }))
     const download = await screen.findByRole('link', { name: `Download ${ARTIFACT.filename}` })
     expect(download).toHaveAttribute('href', '/api/v1/approvals/ap-1/download')
+    expect(screen.getByRole('link', { name: 'Track this application' })).toHaveAttribute('href', '/tracker?approval=ap-1')
     const approveCall = fetchMock.mock.calls.find(([url]) => String(url).endsWith('/approve'))!
     expect(JSON.parse(String(approveCall[1]?.body))).toEqual({
       draft_version: 1,

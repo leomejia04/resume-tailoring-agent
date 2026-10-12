@@ -373,6 +373,8 @@ export interface ApprovalOut {
   run_id: string
   job_title: string | null
   company: string | null
+  /** The posting link entered with the job (a label; never fetched). */
+  source_url: string | null
   filename: string
   draft_version: number
   artifact_sha256: string
@@ -482,4 +484,42 @@ export interface ImprovementAttempt {
   score_after: number | null
   created_at: string
   finished_at: string | null
+}
+
+// --- Application tracker (mirrors backend/app/schemas/tracker.py) ---
+
+export type ApplicationStatus = 'planned' | 'applied' | 'interviewing' | 'offer' | 'accepted' | 'rejected' | 'withdrawn'
+
+/** What the tracker form sends; empty strings become null on the server. */
+export interface ApplicationInput {
+  company: string
+  role: string
+  job_url: string | null
+  approval_id: string | null
+  /** YYYY-MM-DD (a calendar date, no time zone). */
+  applied_on: string | null
+  status: ApplicationStatus
+  notes: string | null
+}
+
+export interface TrackedResume {
+  approval_id: string
+  run_id: string
+  filename: string
+  draft_version: number
+  approved_at: string
+}
+
+export interface ApplicationOut {
+  id: string
+  company: string
+  role: string
+  job_url: string | null
+  applied_on: string | null
+  status: ApplicationStatus
+  notes: string | null
+  resume: TrackedResume | null
+  lock_version: number
+  created_at: string
+  updated_at: string
 }

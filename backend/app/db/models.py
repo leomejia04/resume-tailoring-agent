@@ -64,6 +64,15 @@ JOB_LANES = ("workflow", "render", "ats")
 JOB_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 GRANT_PURPOSES = ("master_read", "artifact_read", "pdf_upload", "docx_upload")
 IMPROVEMENT_STATUSES = ("running", "saved", "rejected", "failed")
+APPLICATION_STATUSES = (
+    "planned",
+    "applied",
+    "interviewing",
+    "offer",
+    "accepted",
+    "rejected",
+    "withdrawn",
+)
 # Automatic ATS improvement attempts per run; the attempt_range constraint enforces it.
 MAX_IMPROVEMENT_ATTEMPTS = 2
 
@@ -503,6 +512,7 @@ class Approval(Base):
     __tablename__ = "approvals"
     __table_args__ = (
         UniqueConstraint("artifact_id", name="uq_approvals_artifact_id"),
+        UniqueConstraint("id", "owner_id", name="uq_approvals_id_owner"),
         _owner_fk(["artifact_id", "owner_id"], "artifacts", "fk_approvals_artifact_owner"),
         _owner_fk(["draft_id", "owner_id"], "drafts", "fk_approvals_draft_owner"),
         CheckConstraint("artifact_sha256 ~ '^[0-9a-f]{64}$'", name="sha256_hex"),
@@ -780,3 +790,40 @@ class ImprovementAttempt(Base):
     outcome: Mapped[str | None] = mapped_column(String(32))
     created_at: Mapped[datetime] = _created_at()
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# --- Milestone 6e: manual application tracker ------------------------------------
+
+
+class Application(Base):
+    """One job application the user tracks by hand (milestone 6e).
+
+    Optionally points at one of the owner's approvals: the exact resume version
+    (and PDF hash) that was sent. Entries are user notes, not evidence; they
+    never feed tailoring. Deleting one is a hard delete the user confirms.
+    """
+
+    __tablename__ = "applications"
+    __table_args__ = (
+        _owner_fk(["approval_id", "owner_id"], "approvals", "fk_applications_approval_owner"),
+        CheckConstraint(_in("status", APPLICATION_STATUSES), name="status"),
+        CheckConstraint("length(btrim(company)) > 0", name="company_not_blank"),
+        CheckConstraint("length(btrim(role)) > 0", name="role_not_blank"),
+        # The API validates links fully; this only keeps other schemes out of the table.
+        CheckConstraint("job_url IS NULL OR job_url ~ '^https?://'", name="job_url_http"),
+        CheckConstraint("lock_version > 0", name="lock_version_positive"),
+        Index("ix_applications_owner_created", "owner_id", "created_at"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    company: Mapped[str] = mapped_column(String(200), nullable=False)
+    role: Mapped[str] = mapped_column(String(200), nullable=False)
+    job_url: Mapped[str | None] = mapped_column(String(2048))
+    approval_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    applied_on: Mapped[date | None] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)
+    notes: Mapped[str | None] = mapped_column(String(4000))
+    lock_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    created_at: Mapped[datetime] = _created_at()
+    updated_at: Mapped[datetime] = _created_at()

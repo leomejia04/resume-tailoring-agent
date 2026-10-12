@@ -11,6 +11,17 @@ from app.services.job_text import normalize_job_text
 MIN_DESCRIPTION_CHARS = 40
 MAX_DESCRIPTION_CHARS = 50_000
 _URL_ONLY = re.compile(r"https?://\S+")
+MAX_URL_CHARS = 2048
+
+
+def plain_http_url(url: HttpUrl | None) -> HttpUrl | None:
+    """A stored link label: http(s) only (HttpUrl), no embedded credentials, bounded length."""
+    if url is not None:
+        if url.username or url.password:
+            raise ValueError("links must not contain a username or password")
+        if len(str(url)) > MAX_URL_CHARS:
+            raise ValueError("link is too long")
+    return url
 
 
 class JobInputRequest(BaseModel):
@@ -35,12 +46,7 @@ class JobInputRequest(BaseModel):
     @field_validator("source_url")
     @classmethod
     def _plain_url(cls, url: HttpUrl | None) -> HttpUrl | None:
-        if url is not None:
-            if url.username or url.password:
-                raise ValueError("links must not contain a username or password")
-            if len(str(url)) > 2048:
-                raise ValueError("link is too long")
-        return url
+        return plain_http_url(url)
 
     @field_validator("description")
     @classmethod

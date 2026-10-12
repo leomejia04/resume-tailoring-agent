@@ -10,10 +10,10 @@ import { DashboardPage } from './pages/DashboardPage'
 import { ExperiencePage } from './pages/ExperiencePage'
 import { JobInputPage } from './pages/JobInputPage'
 import { NotFoundPage } from './pages/NotFoundPage'
-import { PlaceholderPage } from './pages/PlaceholderPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { RunPage } from './pages/RunPage'
 import { SettingsPage } from './pages/SettingsPage'
+import { TrackerPage } from './pages/TrackerPage'
 
 export default function App() {
   return (
@@ -31,12 +31,7 @@ export default function App() {
           <Route path="experience" element={<ExperiencePage />} />
           <Route path="runs/:runId" element={<RunPage />} />
           <Route path="profile" element={<ProfilePage />} />
-          <Route
-            path="tracker"
-            element={
-              <PlaceholderPage title="Tracker" description="Keep track of where you applied and with which resume." />
-            }
-          />
+          <Route path="tracker" element={<TrackerPage />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>

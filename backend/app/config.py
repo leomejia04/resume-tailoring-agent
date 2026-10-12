@@ -109,6 +109,8 @@ class Settings(BaseSettings):
     # attempts per run, each within the usual spending limits. Off: users can
     # still start it from the run page.
     auto_improve: bool = True
+    # Manual application tracker: entries per user (abuse guard for free text).
+    max_applications_per_user: int = Field(default=1000, ge=1, le=10_000)
 
     @field_validator("cors_allowed_origins", "trusted_origins", mode="before")
     @classmethod

@@ -72,9 +72,18 @@ export function DashboardPage() {
                     version {a.draft_version} · {new Date(a.approved_at).toLocaleDateString()}
                   </span>
                 </span>
-                <a href={approvalDownloadUrl(a.id)} className="break-all text-sm text-indigo-700 underline" download>
-                  Download {a.filename}
-                </a>
+                <span className="flex flex-wrap gap-x-3 text-sm">
+                  <a href={approvalDownloadUrl(a.id)} className="break-all text-indigo-700 underline" download>
+                    Download {a.filename}
+                  </a>
+                  <Link
+                    to={`/tracker?approval=${encodeURIComponent(a.id)}`}
+                    aria-label={`Track application for ${a.job_title ?? 'this job'}${a.company ? ` at ${a.company}` : ''}`}
+                    className="text-indigo-700 underline"
+                  >
+                    Track application
+                  </Link>
+                </span>
               </li>
             ))}
           </ul>

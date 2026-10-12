@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router'
 import {
   approvalDownloadUrl,
   approveDraft,
@@ -89,6 +90,10 @@ export function ExportPanel({ run, onRun }: Props) {
           <a href={approvalDownloadUrl(run.approval.id)} className="break-all underline" download>
             Download {run.approval.filename}
           </a>
+          {' · '}
+          <Link to={`/tracker?approval=${encodeURIComponent(run.approval.id)}`} className="underline">
+            Track this application
+          </Link>
         </Alert>
       )}
       <div className="flex flex-wrap items-center gap-3">

@@ -117,6 +117,8 @@ class ApprovalOut(BaseModel):
     run_id: uuid.UUID
     job_title: str | None
     company: str | None
+    # The posting link the user entered (a label; never fetched).
+    source_url: str | None
     filename: str
     draft_version: int
     artifact_sha256: str
@@ -370,7 +372,9 @@ def approvals(
 ) -> list[ApprovalOut]:
     with user_db(settings, user) as db:
         rows = db.execute(
-            select(Approval, Draft.run_id, JobPosting.title, JobPosting.company)
+            select(
+                Approval, Draft.run_id, JobPosting.title, JobPosting.company, JobPosting.source_url
+            )
             .join(Draft, Draft.id == Approval.draft_id)
             .join(TailoringRun, TailoringRun.id == Draft.run_id)
             .join(JobPostingVersion, JobPostingVersion.id == TailoringRun.posting_version_id)
@@ -384,12 +388,13 @@ def approvals(
                 run_id=run_id,
                 job_title=title,
                 company=company,
+                source_url=source_url,
                 filename=a.filename,
                 draft_version=a.draft_version,
                 artifact_sha256=a.artifact_sha256,
                 approved_at=a.approved_at,
             )
-            for a, run_id, title, company in rows
+            for a, run_id, title, company, source_url in rows
         ]
 
 

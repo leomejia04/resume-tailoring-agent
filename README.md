@@ -3,7 +3,7 @@
 A hosted, multi-user application for creating truthful, tailored, one-page PDF
 resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md).
 
-**Current state:** milestones 1-6 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 added saved ATS match estimates required for approval (6a-6b), a durable background worker with bounded retries and crash recovery (6c), up to two automatic, fact-checked improvement attempts per run (6d), and a private manual application tracker (6e). Milestone 7 (measured retrieval, ADR 0010) is implemented and measured on a labeled fictional set; its draft-level comparison awaits an authorized live budget.
+**Current state:** milestones 1-7 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 added saved ATS match estimates required for approval (6a-6b), a durable background worker with bounded retries and crash recovery (6c), up to two automatic, fact-checked improvement attempts per run (6d), and a private manual application tracker (6e). Milestone 7 added measured retrieval (ADR 0010): local embeddings, pgvector hybrid search, and a labeled evaluation; live drafts showed the full profile works best for normal-sized profiles, so retrieval is used only when a profile is too large to send whole.
 
 - Document proof: a fictional master DOCX is edited in a copy with formatting
   preserved, rendered to PDF in a sandboxed LibreOffice container, and inspected.
@@ -260,6 +260,14 @@ results to git-ignored `backend/out/eval/`, ADR 0010):
 
 ```bash
 .venv/Scripts/python -m scripts.eval_retrieval
+```
+
+Live draft comparison, full profile vs retrieval (PAID: needs `OPENAI_API_KEY`
+and an explicit cap; refuses to run without one and stops before the next
+draft could exceed it; `--demo` checks the plumbing for free):
+
+```bash
+.venv/Scripts/python -m scripts.eval_drafts --budget-usd 1.00
 ```
 
 ## Configuration

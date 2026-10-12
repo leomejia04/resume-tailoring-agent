@@ -305,3 +305,17 @@ Short notes on concepts introduced while building, in plain language.
   under you. A fixed revision plus a SHA-256 for every file means the bytes
   you tested are the bytes you run, and `trust_remote_code=False` means
   loading the model never runs code from the download.
+- **More context is not always better, and less is not always cheaper in
+  quality.** In live drafts, a normal profile sent whole let the model cite
+  more of the right facts than a retrieved subset. But 78 facts from four
+  different careers confused it (bullets under jobs that did not exist), and
+  the retrieved subset produced cleaner drafts for 38% less. The right
+  answer depended on the size and shape of the input, which only a
+  measurement could show.
+- **Bound live evaluations twice.** The evaluation script reserves each
+  draft's worst case (two calls at the output limit) against a cap the
+  owner set, on top of the app's own spending limits, and stops before the
+  cap could be crossed. The 32-draft run spent $0.08 of a $1 cap.
+- **Blind A/B review.** Showing two drafts as A and B in random order, with
+  the key in a separate file, keeps the reviewer from favoring the method
+  they expect to win.

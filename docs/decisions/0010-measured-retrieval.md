@@ -1,8 +1,8 @@
 # ADR 0010: Measured retrieval (RAG)
 
-Status: accepted (milestone 7). Retrieval-level results are measured below;
-draft-level comparisons (factual errors, writing preference, model cost)
-need a live budget and are not yet measured.
+Status: accepted (milestone 7). Retrieval-level and live draft-level
+results are measured below; the owner's blind writing-preference review is
+pending.
 
 ## Context
 
@@ -189,16 +189,55 @@ and CPU time, and since the default rarely retrieves, it is deferred until
 large profiles are common or a draft-level evaluation shows misses that
 matter.
 
-## Not yet measured (needs an authorized budget)
+## Draft-level results (live)
 
-Factual errors, human writing preference, and model cost per draft for full
-context vs hybrid selection require live drafting calls. A proposed run:
-the 8 postings x 2 modes x 2 profiles = 32 drafts with `gpt-5.6-luna` at low
-effort, about $0.07 at the earlier measured $0.0021 per run, capped at $1.
-Each draft would be checked by the existing claim validator (factual errors)
-and compared side by side by the owner (preference). Until then, the
-retrieval-level numbers above are the evidence, and they are on a small
-fictional set labeled by the assistant.
+Run 2026-10-12 05:59 UTC with owner authorization (cap $1.00), commit
+edc46b7 plus the runner, `gpt-5.6-luna` at low reasoning effort, top_k 4.
+`.venv/Scripts/python -m scripts.eval_drafts --budget-usd 1.00` drafted all
+8 postings in both scenarios and both modes (32 drafts, 49 model calls
+including repairs) through the production `generate_draft`: same labeled
+requirements for both modes, same prompt, claim validation, one bounded
+repair. **Spent: $0.080071 of the $1.00 cap**, recorded by the app's own
+usage accounting. Raw output: `backend/out/eval/drafts-20261012T055912Z.json`
+(git-ignored), plus `-blind.md` and `-key.json` for the preference review.
+
+| scenario | mode | repaired | claims removed | passed validation | direct facts cited | labeled facts cited | ATS estimate | facts sent | input tokens | cost per draft | seconds |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| own role (17-22 facts) | full | 4/8 | 2 | 6/8 | **0.94** | 0.74 | 68.1 | 19.5 | 2,771 | $0.0021 | 14.8 |
+| own role | hybrid | 4/8 | 3 | 5/8 | 0.85 | 0.71 | 68.3 | 17.6 | 2,676 | $0.0020 | 13.0 |
+| 78-fact bank | full | 6/8 | 8 | 5/8 | 0.85 | 0.59 | 69.4 | 78 | 7,146 | $0.0037 | 15.6 |
+| 78-fact bank | hybrid | 3/8 | **0** | **8/8** | 0.85 | 0.61 | 68.3 | 36.4 | 3,564 | **$0.0023** | 12.7 |
+
+How to read it: "repaired" means the first output failed a deterministic
+check and was sent back once; "claims removed" are statements still
+unsupported after the repair, which the app deletes before saving (so no
+saved draft contains them); "passed" is a clean final report. Error codes
+seen: `unsupported_name` (a tool or name not in the cited facts) in both
+modes, and `unknown_entry` (a bullet placed under an entry that does not
+exist) only with the full 78-fact bank. "Direct facts cited" is the share
+of labeled direct evidence the final draft actually cites.
+
+What it says:
+
+- **Realistic profiles: full context is better.** The drafts cite 94% of the
+  directly supporting facts with the full profile vs 85% with the
+  selection, at the same cost and ATS estimate. This confirms the default.
+- **Large, mixed banks: retrieval is cleaner and cheaper at no loss of
+  evidence.** With 78 facts from four different careers, full context
+  confused the model (entries that do not exist, 8 claims removed, 3 drafts
+  not passing), while the selection halved input tokens, cut cost by 38%,
+  needed half the repairs, and passed every draft, citing the same share
+  of direct evidence. This supports retrieving above the budget; whether
+  it justifies a lower threshold needs real large single-person profiles
+  (the bank is an artificial mix and invites cross-person confusion).
+- **The ATS estimate barely moves** (68-69 in every cell): the drafts differ
+  more in which facts they cite than in rubric coverage.
+- One draft per posting per cell is a small sample, and model output varies
+  between runs; differences of a few points are within noise.
+
+**Writing preference is pending the owner:** `-blind.md` pairs the two
+drafts of each posting as A/B in random order; the owner notes a preference
+per pair before opening `-key.json`. AI judging was not used.
 
 ## Consequences
 

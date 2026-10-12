@@ -14,6 +14,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
 
+from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     CheckConstraint,
     Column,
@@ -402,6 +403,7 @@ class DraftVersion(Base):
         UniqueConstraint("draft_id", "version", name="uq_draft_versions_draft_version"),
         UniqueConstraint("id", "owner_id", name="uq_draft_versions_id_owner"),
         _owner_fk(["draft_id", "owner_id"], "drafts", "fk_draft_versions_draft_owner"),
+        _owner_fk(["retrieval_id", "owner_id"], "retrievals", "fk_draft_versions_retrieval_owner"),
         CheckConstraint(_in("created_by", DRAFT_SOURCES), name="created_by"),
         CheckConstraint("version > 0", name="version_positive"),
     )
@@ -415,6 +417,8 @@ class DraftVersion(Base):
     created_by: Mapped[str] = mapped_column(String(16), nullable=False)
     model: Mapped[str | None] = mapped_column(String(100))
     prompt_version: Mapped[str | None] = mapped_column(String(50))
+    # The fact selection a generated version's model context came from (milestone 7).
+    retrieval_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
     created_at: Mapped[datetime] = _created_at()
 
 
@@ -827,3 +831,110 @@ class Application(Base):
     lock_version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
     created_at: Mapped[datetime] = _created_at()
     updated_at: Mapped[datetime] = _created_at()
+
+
+# --- Milestone 7: retrieval (ADR 0010) --------------------------------------------
+
+RETRIEVAL_MODES = ("full", "hybrid")
+
+
+class EvidenceChunk(Base):
+    """Embedded text of one confirmed fact version: derived data, rebuilt at any time.
+
+    ``context`` is the parent entry and section the fact belongs to; the vector
+    embeds context and body together. Rows are tied to the exact fact version
+    and to the embedding model revision, so an edited fact or a new model gets
+    new rows and old ones are deleted. Removing the fact removes its chunks.
+    """
+
+    __tablename__ = "evidence_chunks"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["evidence_id", "owner_id"],
+            ["app.evidence_records.id", "app.evidence_records.owner_id"],
+            name="fk_evidence_chunks_record_owner",
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["evidence_id", "evidence_version"],
+            ["app.evidence_versions.evidence_id", "app.evidence_versions.version"],
+            name="fk_evidence_chunks_version",
+            ondelete="CASCADE",
+        ),
+        UniqueConstraint(
+            "evidence_id",
+            "evidence_version",
+            "model",
+            "model_revision",
+            "chunk_index",
+            name="uq_evidence_chunks_identity",
+        ),
+        CheckConstraint("chunk_index >= 0", name="chunk_index_nonnegative"),
+        CheckConstraint("length(body) > 0", name="body_not_empty"),
+        CheckConstraint("dimension = 384", name="dimension"),
+        Index("ix_evidence_chunks_owner_model", "owner_id", "model", "model_revision"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    evidence_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    evidence_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    chunk_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    context: Mapped[str] = mapped_column(String(500), nullable=False)
+    body: Mapped[str] = mapped_column(String(2000), nullable=False)
+    # SHA-256 of the exact embedded text: identical text reuses the owner's vector.
+    content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    token_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    model_revision: Mapped[str] = mapped_column(String(64), nullable=False)
+    dimension: Mapped[int] = mapped_column(Integer, nullable=False)
+    normalized: Mapped[bool] = mapped_column(nullable=False)
+    embedding: Mapped[list[float]] = mapped_column(Vector(384), nullable=False)
+    created_at: Mapped[datetime] = _created_at()
+
+
+class Retrieval(Base):
+    """Which confirmed facts a draft's model context used, and why (insert-only).
+
+    ``result`` holds per-requirement rankings (evidence IDs and scores per
+    method), the selected IDs, and fallback notes: never fact text. Rows are a
+    tenant-scoped cache: the same analysis, profile fingerprint (evidence IDs
+    and versions), and configuration reuse the stored selection.
+    """
+
+    __tablename__ = "retrievals"
+    __table_args__ = (
+        UniqueConstraint("id", "owner_id", name="uq_retrievals_id_owner"),
+        UniqueConstraint(
+            "owner_id",
+            "analysis_id",
+            "profile_fingerprint",
+            "config_fingerprint",
+            name="uq_retrievals_cache_key",
+        ),
+        _owner_fk(["run_id", "owner_id"], "tailoring_runs", "fk_retrievals_run_owner"),
+        _owner_fk(["analysis_id", "owner_id"], "job_analyses", "fk_retrievals_analysis_owner"),
+        CheckConstraint(_in("mode", RETRIEVAL_MODES), name="mode"),
+        CheckConstraint("facts_selected <= facts_total", name="selected_within_total"),
+        Index("ix_retrievals_owner_run", "owner_id", "run_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    # The run that first computed it; later runs may reuse it through the cache key.
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    analysis_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason: Mapped[str] = mapped_column(String(32), nullable=False)
+    strategy_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    profile_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    config_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    embedding_model: Mapped[str | None] = mapped_column(String(100))
+    embedding_revision: Mapped[str | None] = mapped_column(String(64))
+    facts_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    facts_selected: Mapped[int] = mapped_column(Integer, nullable=False)
+    chars_total: Mapped[int] = mapped_column(Integer, nullable=False)
+    chars_selected: Mapped[int] = mapped_column(Integer, nullable=False)
+    runtime_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+    result: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = _created_at()

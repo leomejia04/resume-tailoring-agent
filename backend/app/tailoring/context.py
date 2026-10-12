@@ -104,6 +104,26 @@ def build_context(
     return ProfileContext(facts, entries, unattached, truncated)
 
 
+def subset_context(
+    full: ProfileContext, keep: set[uuid.UUID] | frozenset[uuid.UUID]
+) -> ProfileContext:
+    """Only the kept facts, with the same aliases and entry refs as ``full``.
+
+    Stable aliases mean validation and omission reporting work the same way
+    whether the model saw every fact or a retrieved selection.
+    """
+    facts = {a: f for a, f in full.facts.items() if f.evidence_id in keep}
+    entries: dict[str, EntryGroup] = {}
+    for ref, group in full.entries.items():
+        kept = [f for f in group.facts if f.evidence_id in keep]
+        if kept:
+            entries[ref] = EntryGroup(
+                ref, group.section, group.entry, group.date_text, group.experience_type, kept
+            )
+    unattached = [f for f in full.unattached if f.evidence_id in keep]
+    return ProfileContext(facts, entries, unattached, full.truncated)
+
+
 def draft_payload(
     context: ProfileContext, analysis: AnalysisContent, title: str | None, company: str | None
 ) -> dict[str, Any]:

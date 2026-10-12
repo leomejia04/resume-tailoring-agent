@@ -233,6 +233,15 @@ export interface ValidationReport {
   passed: boolean
 }
 
+/** Which confirmed facts the AI read when it last generated the draft (ADR 0010). */
+export interface DraftContext {
+  mode: 'full' | 'hybrid'
+  reason: string
+  facts_selected: number
+  facts_total: number
+  draft_version: number
+}
+
 export interface DraftOut {
   version: number
   content: DraftContent
@@ -242,6 +251,7 @@ export interface DraftOut {
   prompt_version: string | null
   created_at: string
   sources: Record<string, { text: string; entry: string | null; experience_type: string }>
+  context?: DraftContext | null
 }
 
 export type RunStatus =

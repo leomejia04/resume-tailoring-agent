@@ -1,0 +1,208 @@
+{
+  "version": "retrieval-eval/v1",
+  "about": "Fictional profiles and postings for measuring retrieval (milestone 7). Every person, employer, and number is invented. Labels: 'direct' = the fact by itself shows the requirement; 'related' = adjacent or partial evidence (same skill family, academic or personal instead of professional, part of a multi-part requirement). A requirement with neither is 'missing'. Each requirement is labeled against all 78 facts so the same labels serve the combined-profile scenario. Labels were written by the assistant that built the system (not independent annotators) and should be spot-checked by the owner.",
+  "profiles": {
+    "data": [
+      {"id": "d01", "section": "Experience", "entry": "Data Analyst, Northwind Outdoor Supply", "date_text": "2022 - Present", "experience_type": "professional", "text": "Built weekly sales and inventory reports in SQL (PostgreSQL) covering 140 stores."},
+      {"id": "d02", "section": "Experience", "entry": "Data Analyst, Northwind Outdoor Supply", "date_text": "2022 - Present", "experience_type": "professional", "text": "Designed Power BI dashboards that store managers use to track sell-through and stock-outs."},
+      {"id": "d03", "section": "Experience", "entry": "Data Analyst, Northwind Outdoor Supply", "date_text": "2022 - Present", "experience_type": "professional", "text": "Automated a manual Excel reconciliation with Python (pandas), cutting month-end close by 2 days."},
+      {"id": "d04", "section": "Experience", "entry": "Data Analyst, Northwind Outdoor Supply", "date_text": "2022 - Present", "experience_type": "professional", "text": "Partnered with merchandising and finance leads to define KPIs and agree on one definition of gross margin."},
+      {"id": "d05", "section": "Experience", "entry": "Data Analyst, Northwind Outdoor Supply", "date_text": "2022 - Present", "experience_type": "professional", "text": "Wrote data quality checks in dbt that flag missing or duplicated transactions before reports refresh."},
+      {"id": "d06", "section": "Experience", "entry": "Data Analyst, Northwind Outdoor Supply", "date_text": "2022 - Present", "experience_type": "professional", "text": "Analyzed A/B tests of email promotions and presented the results to the marketing director."},
+      {"id": "d07", "section": "Experience", "entry": "Data Analyst, Northwind Outdoor Supply", "date_text": "2022 - Present", "experience_type": "professional", "text": "Documented data sources and report logic in Confluence so new analysts could onboard in their first week."},
+      {"id": "d22", "section": "Experience", "entry": "Data Analyst, Northwind Outdoor Supply", "date_text": "2022 - Present", "experience_type": "professional", "text": "Supported the R&D team with product testing data from field trials."},
+      {"id": "d08", "section": "Experience", "entry": "Reporting Analyst (Contract), Harbor Health Clinics", "date_text": "2020 - 2022", "experience_type": "professional", "text": "Maintained Tableau dashboards for patient wait times across 12 clinics."},
+      {"id": "d09", "section": "Experience", "entry": "Reporting Analyst (Contract), Harbor Health Clinics", "date_text": "2020 - 2022", "experience_type": "professional", "text": "Extracted appointment data from SQL Server with stored procedures and scheduled jobs."},
+      {"id": "d10", "section": "Experience", "entry": "Reporting Analyst (Contract), Harbor Health Clinics", "date_text": "2020 - 2022", "experience_type": "professional", "text": "Cleaned and merged scheduling exports in Excel using Power Query and pivot tables."},
+      {"id": "d11", "section": "Experience", "entry": "Reporting Analyst (Contract), Harbor Health Clinics", "date_text": "2020 - 2022", "experience_type": "professional", "text": "Answered ad hoc data requests from clinic managers within agreed turnaround times."},
+      {"id": "d12", "section": "Experience", "entry": "Business Intelligence Intern, Lakeside Credit Union", "date_text": "Summer 2019", "experience_type": "internship", "text": "Built a churn analysis in R that identified members likely to close their accounts."},
+      {"id": "d13", "section": "Experience", "entry": "Business Intelligence Intern, Lakeside Credit Union", "date_text": "Summer 2019", "experience_type": "internship", "text": "Helped migrate monthly reports from Access to Snowflake."},
+      {"id": "d14", "section": "Projects", "entry": "Capstone: Transit Ridership Forecast", "date_text": "2019", "experience_type": "academic", "text": "Forecasted bus ridership with Python (scikit-learn) time-series models on city open data."},
+      {"id": "d15", "section": "Projects", "entry": "Capstone: Transit Ridership Forecast", "date_text": "2019", "experience_type": "academic", "text": "Presented the forecast to faculty and a city planning panel."},
+      {"id": "d16", "section": "Projects", "entry": "Personal project: Trail Conditions Tracker", "date_text": "2024", "experience_type": "personal", "text": "Built a web scraper and a Streamlit app with JavaScript charts that show trail closures from public park notices."},
+      {"id": "d17", "section": "Skills", "entry": null, "date_text": null, "experience_type": "professional", "text": "SQL, Python, R, dbt, Power BI, Tableau, Excel"},
+      {"id": "d18", "section": "Skills", "entry": null, "date_text": null, "experience_type": "academic", "text": "Statistics: regression, hypothesis testing, A/B testing"},
+      {"id": "d19", "section": "Skills", "entry": null, "date_text": null, "experience_type": "other", "text": "Languages: English, Spanish"},
+      {"id": "d20", "section": "Education", "entry": "B.S. Statistics, Westbrook State University", "date_text": "2019", "experience_type": "academic", "text": "B.S. in Statistics with a minor in Economics."},
+      {"id": "d21", "section": "Certifications", "entry": null, "date_text": null, "experience_type": "other", "text": "Microsoft Certified: Power BI Data Analyst Associate (2023)"}
+    ],
+    "grc": [
+      {"id": "g01", "section": "Experience", "entry": "IT Compliance Analyst, Meridian Payments", "date_text": "2021 - Present", "experience_type": "professional", "text": "Coordinated the annual SOC 2 Type II audit, collecting evidence for 85 controls across engineering and HR."},
+      {"id": "g02", "section": "Experience", "entry": "IT Compliance Analyst, Meridian Payments", "date_text": "2021 - Present", "experience_type": "professional", "text": "Mapped internal controls to NIST CSF and ISO 27001 to find gaps ahead of certification."},
+      {"id": "g03", "section": "Experience", "entry": "IT Compliance Analyst, Meridian Payments", "date_text": "2021 - Present", "experience_type": "professional", "text": "Ran quarterly user access reviews for 30 applications and tracked removals to closure."},
+      {"id": "g04", "section": "Experience", "entry": "IT Compliance Analyst, Meridian Payments", "date_text": "2021 - Present", "experience_type": "professional", "text": "Reviewed security questionnaires from third-party suppliers and rated each supplier's risk."},
+      {"id": "g05", "section": "Experience", "entry": "IT Compliance Analyst, Meridian Payments", "date_text": "2021 - Present", "experience_type": "professional", "text": "Maintained the risk register in Archer and reported top risks to the security steering committee each month."},
+      {"id": "g06", "section": "Experience", "entry": "IT Compliance Analyst, Meridian Payments", "date_text": "2021 - Present", "experience_type": "professional", "text": "Drafted and updated the information security policy and acceptable use policy with legal and IT."},
+      {"id": "g07", "section": "Experience", "entry": "IT Compliance Analyst, Meridian Payments", "date_text": "2021 - Present", "experience_type": "professional", "text": "Tracked remediation plans for audit findings and confirmed fixes with control owners."},
+      {"id": "g18", "section": "Experience", "entry": "IT Compliance Analyst, Meridian Payments", "date_text": "2021 - Present", "experience_type": "professional", "text": "Supported the PCI DSS self-assessment questionnaire for the card processing environment."},
+      {"id": "g19", "section": "Experience", "entry": "IT Compliance Analyst, Meridian Payments", "date_text": "2021 - Present", "experience_type": "professional", "text": "Trained 200 employees on phishing awareness and collected policy acknowledgments."},
+      {"id": "g20", "section": "Experience", "entry": "IT Compliance Analyst, Meridian Payments", "date_text": "2021 - Present", "experience_type": "professional", "text": "Built a Jira workflow to track evidence requests and due dates for control owners."},
+      {"id": "g08", "section": "Experience", "entry": "Internal Audit Associate, Coastal Mutual Insurance", "date_text": "2018 - 2021", "experience_type": "professional", "text": "Tested IT general controls (change management, access, backups) for the SOX program."},
+      {"id": "g09", "section": "Experience", "entry": "Internal Audit Associate, Coastal Mutual Insurance", "date_text": "2018 - 2021", "experience_type": "professional", "text": "Wrote audit workpapers and findings memos reviewed by the audit manager."},
+      {"id": "g10", "section": "Experience", "entry": "Internal Audit Associate, Coastal Mutual Insurance", "date_text": "2018 - 2021", "experience_type": "professional", "text": "Used ACL and Excel to sample transactions and detect exceptions."},
+      {"id": "g11", "section": "Experience", "entry": "Internal Audit Associate, Coastal Mutual Insurance", "date_text": "2018 - 2021", "experience_type": "professional", "text": "Interviewed process owners to walk through claims and payments processes."},
+      {"id": "g12", "section": "Volunteering", "entry": "Volunteer Treasurer, Riverbend Food Bank", "date_text": "2017 - 2020", "experience_type": "personal", "text": "Kept the food bank's books in QuickBooks and prepared financial reports for the board."},
+      {"id": "g13", "section": "Skills", "entry": null, "date_text": null, "experience_type": "professional", "text": "Frameworks: SOC 2, NIST CSF, ISO 27001, SOX ITGC, PCI DSS"},
+      {"id": "g14", "section": "Skills", "entry": null, "date_text": null, "experience_type": "professional", "text": "Tools: Archer, ServiceNow GRC, Excel, ACL, Jira"},
+      {"id": "g15", "section": "Education", "entry": "B.B.A. Accounting, Eastfield College", "date_text": "2018", "experience_type": "academic", "text": "Bachelor of Business Administration in Accounting."},
+      {"id": "g16", "section": "Certifications", "entry": null, "date_text": null, "experience_type": "other", "text": "Certified Information Systems Auditor (CISA), 2020"},
+      {"id": "g17", "section": "Certifications", "entry": null, "date_text": null, "experience_type": "other", "text": "CompTIA Security+ (2019)"}
+    ],
+    "ba": [
+      {"id": "b01", "section": "Experience", "entry": "Business Analyst, Pinecrest Logistics", "date_text": "2021 - Present", "experience_type": "professional", "text": "Ran requirements workshops with warehouse supervisors and turned their needs into user stories in Jira."},
+      {"id": "b02", "section": "Experience", "entry": "Business Analyst, Pinecrest Logistics", "date_text": "2021 - Present", "experience_type": "professional", "text": "Mapped as-is and to-be order fulfillment processes in Visio using BPMN."},
+      {"id": "b03", "section": "Experience", "entry": "Business Analyst, Pinecrest Logistics", "date_text": "2021 - Present", "experience_type": "professional", "text": "Wrote acceptance criteria and coordinated user acceptance testing with 15 warehouse staff."},
+      {"id": "b04", "section": "Experience", "entry": "Business Analyst, Pinecrest Logistics", "date_text": "2021 - Present", "experience_type": "professional", "text": "Analyzed shipment delay data in SQL to size the business case for a new routing tool."},
+      {"id": "b05", "section": "Experience", "entry": "Business Analyst, Pinecrest Logistics", "date_text": "2021 - Present", "experience_type": "professional", "text": "Acted as liaison between operations and the development team during sprint planning."},
+      {"id": "b06", "section": "Experience", "entry": "Business Analyst, Pinecrest Logistics", "date_text": "2021 - Present", "experience_type": "professional", "text": "Prepared a cost-benefit analysis that supported approval of a $250K warehouse system upgrade."},
+      {"id": "b07", "section": "Experience", "entry": "Business Analyst, Pinecrest Logistics", "date_text": "2021 - Present", "experience_type": "professional", "text": "Created training guides and ran go-live sessions for the new returns process."},
+      {"id": "b18", "section": "Experience", "entry": "Business Analyst, Pinecrest Logistics", "date_text": "2021 - Present", "experience_type": "professional", "text": "Maintained the product backlog with the product owner and refined stories each sprint."},
+      {"id": "b19", "section": "Experience", "entry": "Business Analyst, Pinecrest Logistics", "date_text": "2021 - Present", "experience_type": "professional", "text": "Facilitated stakeholder reviews to prioritize change requests with operations managers."},
+      {"id": "b08", "section": "Experience", "entry": "Operations Coordinator, Pinecrest Logistics", "date_text": "2019 - 2021", "experience_type": "professional", "text": "Scheduled inbound trucks and resolved carrier issues with the transportation team."},
+      {"id": "b09", "section": "Experience", "entry": "Operations Coordinator, Pinecrest Logistics", "date_text": "2019 - 2021", "experience_type": "professional", "text": "Built Excel trackers for dock appointments that reduced missed slots by 20%."},
+      {"id": "b10", "section": "Experience", "entry": "Operations Coordinator, Pinecrest Logistics", "date_text": "2019 - 2021", "experience_type": "professional", "text": "Spotted recurring picking errors and proposed a labeling change that two warehouses adopted."},
+      {"id": "b11", "section": "Experience", "entry": "Customer Service Representative, Bright Home Insurance", "date_text": "2017 - 2019", "experience_type": "professional", "text": "Resolved 40+ policyholder calls a day and escalated billing issues to the right team."},
+      {"id": "b12", "section": "Projects", "entry": "Course project: Library Booking System", "date_text": "2017", "experience_type": "academic", "text": "Gathered requirements from library staff and wrote a functional specification for a room booking system."},
+      {"id": "b13", "section": "Skills", "entry": null, "date_text": null, "experience_type": "professional", "text": "Jira, Confluence, Visio, Excel, SQL (basic), Power BI (basic)"},
+      {"id": "b14", "section": "Skills", "entry": null, "date_text": null, "experience_type": "professional", "text": "Methods: Agile Scrum, BPMN, UML use cases, user stories"},
+      {"id": "b15", "section": "Education", "entry": "B.A. Business Administration, Northgate University", "date_text": "2017", "experience_type": "academic", "text": "Bachelor of Arts in Business Administration."},
+      {"id": "b16", "section": "Certifications", "entry": null, "date_text": null, "experience_type": "other", "text": "IIBA Entry Certificate in Business Analysis (ECBA), 2022"},
+      {"id": "b17", "section": "Certifications", "entry": null, "date_text": null, "experience_type": "other", "text": "Certified ScrumMaster (CSM), 2021"}
+    ],
+    "sales": [
+      {"id": "s01", "section": "Experience", "entry": "Account Executive, CloudLedger (SaaS accounting software)", "date_text": "2021 - Present", "experience_type": "professional", "text": "Closed $1.2M in new annual recurring revenue in 2023, reaching 112% of quota."},
+      {"id": "s02", "section": "Experience", "entry": "Account Executive, CloudLedger (SaaS accounting software)", "date_text": "2021 - Present", "experience_type": "professional", "text": "Ran discovery calls and tailored product demos for finance teams at mid-market companies."},
+      {"id": "s03", "section": "Experience", "entry": "Account Executive, CloudLedger (SaaS accounting software)", "date_text": "2021 - Present", "experience_type": "professional", "text": "Managed a pipeline of 60+ opportunities in Salesforce with weekly forecast updates."},
+      {"id": "s04", "section": "Experience", "entry": "Account Executive, CloudLedger (SaaS accounting software)", "date_text": "2021 - Present", "experience_type": "professional", "text": "Worked with solutions engineers to answer security and integration questions during evaluations."},
+      {"id": "s05", "section": "Experience", "entry": "Account Executive, CloudLedger (SaaS accounting software)", "date_text": "2021 - Present", "experience_type": "professional", "text": "Negotiated multi-year contracts with CFOs and procurement teams."},
+      {"id": "s06", "section": "Experience", "entry": "Account Executive, CloudLedger (SaaS accounting software)", "date_text": "2021 - Present", "experience_type": "professional", "text": "Expanded three existing accounts by adding new modules, growing their contract value by 40%."},
+      {"id": "s15", "section": "Experience", "entry": "Account Executive, CloudLedger (SaaS accounting software)", "date_text": "2021 - Present", "experience_type": "professional", "text": "Presented quarterly business reviews to customer executives to secure renewals."},
+      {"id": "s16", "section": "Experience", "entry": "Account Executive, CloudLedger (SaaS accounting software)", "date_text": "2021 - Present", "experience_type": "professional", "text": "Partnered with marketing on an industry webinar that generated 30 opportunities."},
+      {"id": "s17", "section": "Experience", "entry": "Account Executive, CloudLedger (SaaS accounting software)", "date_text": "2021 - Present", "experience_type": "professional", "text": "Mentored two new SDRs on discovery questions and objection handling."},
+      {"id": "s07", "section": "Experience", "entry": "Sales Development Representative, CloudLedger", "date_text": "2019 - 2021", "experience_type": "professional", "text": "Booked 25 qualified meetings a month through cold calls, Outreach email sequences, and LinkedIn."},
+      {"id": "s08", "section": "Experience", "entry": "Sales Development Representative, CloudLedger", "date_text": "2019 - 2021", "experience_type": "professional", "text": "Researched target accounts and personalized outreach for each buyer persona."},
+      {"id": "s09", "section": "Experience", "entry": "Retail Associate, Summit Electronics", "date_text": "2017 - 2019", "experience_type": "professional", "text": "Explained laptop and networking products to shoppers and met monthly accessory targets."},
+      {"id": "s10", "section": "Projects", "entry": "Personal project: Home Lab", "date_text": "2022", "experience_type": "personal", "text": "Set up a home network lab on a Raspberry Pi to learn basic Linux and REST APIs."},
+      {"id": "s11", "section": "Skills", "entry": null, "date_text": null, "experience_type": "professional", "text": "Salesforce, Outreach, Gong, LinkedIn Sales Navigator, HubSpot"},
+      {"id": "s12", "section": "Skills", "entry": null, "date_text": null, "experience_type": "professional", "text": "Sales methods: MEDDIC, Challenger, solution selling"},
+      {"id": "s13", "section": "Education", "entry": "B.A. Communications, Lakeview University", "date_text": "2017", "experience_type": "academic", "text": "Bachelor of Arts in Communications."},
+      {"id": "s14", "section": "Certifications", "entry": null, "date_text": null, "experience_type": "other", "text": "Salesforce Certified Associate (2022)"}
+    ]
+  },
+  "postings": [
+    {
+      "id": "data-1", "role": "Data", "profile": "data", "title": "Data Analyst", "company": "Fictional Grocery Co.",
+      "requirements": [
+        {"id": "R1", "category": "required", "mandatory": true, "text": "3+ years of experience writing SQL queries", "terms": ["SQL"], "direct": ["d01", "d09", "d17", "b04"], "related": ["d05", "d13", "b13"]},
+        {"id": "R2", "category": "required", "mandatory": true, "text": "Experience building dashboards in Tableau or Power BI", "terms": ["Tableau", "Power BI"], "direct": ["d02", "d08", "d21"], "related": ["d17", "b13"]},
+        {"id": "R3", "category": "required", "mandatory": false, "text": "Proficiency with Python for data analysis", "terms": ["Python"], "direct": ["d03", "d14"], "related": ["d16", "d17"]},
+        {"id": "R4", "category": "responsibility", "mandatory": false, "text": "Partner with business stakeholders to define metrics and KPIs", "terms": ["KPIs"], "direct": ["d04"], "related": ["d06", "d11", "b19"]},
+        {"id": "R5", "category": "responsibility", "mandatory": false, "text": "Ensure the data quality and accuracy of reporting", "terms": ["data quality"], "direct": ["d05"], "related": ["d03", "d10", "g10"]},
+        {"id": "R6", "category": "preferred", "mandatory": false, "text": "Experience with dbt or modern data warehouses such as Snowflake", "terms": ["dbt", "Snowflake"], "direct": ["d05", "d13"], "related": ["d17"]},
+        {"id": "R7", "category": "preferred", "mandatory": false, "text": "Knowledge of statistics and experimentation such as A/B testing", "terms": ["statistics", "A/B testing"], "direct": ["d06", "d18", "d20"], "related": ["d12", "d14"]},
+        {"id": "R8", "category": "responsibility", "mandatory": false, "text": "Communicate insights clearly to non-technical audiences", "terms": [], "direct": ["d06", "d15"], "related": ["d02", "d07", "s15", "g05"]},
+        {"id": "R9", "category": "required", "mandatory": false, "text": "Experience with Looker", "terms": ["Looker"], "direct": [], "related": []},
+        {"id": "R10", "category": "terminology", "mandatory": false, "text": "Retail or grocery industry knowledge", "terms": ["retail"], "direct": [], "related": ["d01", "d02", "d04", "s09"]}
+      ]
+    },
+    {
+      "id": "data-2", "role": "Data", "profile": "data", "title": "Healthcare Reporting Analyst", "company": "Fictional Health Network",
+      "requirements": [
+        {"id": "R1", "category": "required", "mandatory": true, "text": "Experience with SQL Server and writing stored procedures", "terms": ["SQL Server", "stored procedures"], "direct": ["d09"], "related": ["d01", "d17", "b04"]},
+        {"id": "R2", "category": "required", "mandatory": false, "text": "Build and maintain Tableau dashboards", "terms": ["Tableau"], "direct": ["d08"], "related": ["d02", "d17", "d21"]},
+        {"id": "R3", "category": "preferred", "mandatory": false, "text": "Healthcare or clinical data experience", "terms": ["healthcare"], "direct": ["d08", "d09"], "related": ["d10", "d11"]},
+        {"id": "R4", "category": "responsibility", "mandatory": false, "text": "Respond to ad hoc reporting requests from operations teams", "terms": ["ad hoc"], "direct": ["d11"], "related": ["d04"]},
+        {"id": "R5", "category": "required", "mandatory": false, "text": "Advanced Excel skills including pivot tables and Power Query", "terms": ["Excel", "pivot tables", "Power Query"], "direct": ["d10"], "related": ["d03", "d17", "g10", "b09", "b13", "g14"]},
+        {"id": "R6", "category": "preferred", "mandatory": false, "text": "Experience with R or SAS for statistical analysis", "terms": ["R", "SAS"], "direct": ["d12"], "related": ["d17", "d18"]},
+        {"id": "R7", "category": "responsibility", "mandatory": false, "text": "Document report definitions and data lineage", "terms": ["data lineage"], "direct": ["d07"], "related": ["d05"]},
+        {"id": "R8", "category": "required", "mandatory": true, "text": "Knowledge of HIPAA privacy requirements", "terms": ["HIPAA"], "direct": [], "related": []},
+        {"id": "R9", "category": "preferred", "mandatory": false, "text": "Experience with Java", "terms": ["Java"], "direct": [], "related": []}
+      ]
+    },
+    {
+      "id": "grc-1", "role": "GRC", "profile": "grc", "title": "GRC Analyst", "company": "Fictional SaaS Inc.",
+      "requirements": [
+        {"id": "R1", "category": "required", "mandatory": true, "text": "Experience supporting SOC 2 audits", "terms": ["SOC 2"], "direct": ["g01"], "related": ["g13", "g07", "g09"]},
+        {"id": "R2", "category": "required", "mandatory": false, "text": "Knowledge of NIST CSF or ISO 27001 frameworks", "terms": ["NIST CSF", "ISO 27001"], "direct": ["g02"], "related": ["g13"]},
+        {"id": "R3", "category": "responsibility", "mandatory": false, "text": "Conduct third-party vendor risk assessments", "terms": ["vendor risk assessments"], "direct": ["g04"], "related": ["g05"]},
+        {"id": "R4", "category": "responsibility", "mandatory": false, "text": "Perform periodic user access reviews", "terms": ["access reviews"], "direct": ["g03"], "related": ["g08"]},
+        {"id": "R5", "category": "responsibility", "mandatory": false, "text": "Maintain the risk register and report risks to leadership", "terms": ["risk register"], "direct": ["g05"], "related": ["g04"]},
+        {"id": "R6", "category": "preferred", "mandatory": false, "text": "CISA or CISSP certification", "terms": ["CISA", "CISSP"], "direct": ["g16"], "related": ["g17"]},
+        {"id": "R7", "category": "required", "mandatory": false, "text": "Write and maintain information security policies", "terms": ["security policies"], "direct": ["g06"], "related": ["g19"]},
+        {"id": "R8", "category": "preferred", "mandatory": false, "text": "Experience with GRC tools such as Archer or ServiceNow", "terms": ["Archer", "ServiceNow"], "direct": ["g05", "g14"], "related": ["g20"]},
+        {"id": "R9", "category": "responsibility", "mandatory": false, "text": "Track remediation of audit findings with control owners", "terms": ["remediation"], "direct": ["g07"], "related": ["g01", "g09", "g20"]},
+        {"id": "R10", "category": "preferred", "mandatory": false, "text": "Experience with FedRAMP", "terms": ["FedRAMP"], "direct": [], "related": []}
+      ]
+    },
+    {
+      "id": "grc-2", "role": "GRC", "profile": "grc", "title": "IT Auditor", "company": "Fictional Community Bank",
+      "requirements": [
+        {"id": "R1", "category": "required", "mandatory": true, "text": "Experience testing IT general controls (ITGC) for SOX", "terms": ["ITGC", "SOX"], "direct": ["g08"], "related": ["g13", "g01"]},
+        {"id": "R2", "category": "required", "mandatory": false, "text": "Prepare audit workpapers and document findings", "terms": ["workpapers"], "direct": ["g09"], "related": ["g07"]},
+        {"id": "R3", "category": "preferred", "mandatory": false, "text": "Data analytics tools such as ACL or IDEA", "terms": ["ACL", "IDEA"], "direct": ["g10"], "related": ["g14"]},
+        {"id": "R4", "category": "required", "mandatory": false, "text": "CISA certification or progress toward it", "terms": ["CISA"], "direct": ["g16"], "related": []},
+        {"id": "R5", "category": "responsibility", "mandatory": false, "text": "Interview process owners and walk through business processes", "terms": ["process owners"], "direct": ["g11"], "related": ["g07"]},
+        {"id": "R6", "category": "preferred", "mandatory": false, "text": "Knowledge of PCI DSS", "terms": ["PCI DSS"], "direct": ["g18"], "related": ["g13"]},
+        {"id": "R7", "category": "required", "mandatory": false, "text": "Bachelor's degree in accounting, finance, or information systems", "terms": ["accounting"], "direct": ["g15"], "related": ["g12"]},
+        {"id": "R8", "category": "preferred", "mandatory": false, "text": "Experience auditing cloud environments such as AWS", "terms": ["AWS"], "direct": [], "related": []},
+        {"id": "R9", "category": "responsibility", "mandatory": false, "text": "Communicate audit results to management", "terms": [], "direct": ["g09", "g05"], "related": ["g12"]}
+      ]
+    },
+    {
+      "id": "ba-1", "role": "Business Analyst", "profile": "ba", "title": "Business Analyst", "company": "Fictional Distribution Co.",
+      "requirements": [
+        {"id": "R1", "category": "required", "mandatory": true, "text": "Experience eliciting and documenting business requirements", "terms": ["requirements"], "direct": ["b01"], "related": ["b12", "b03"]},
+        {"id": "R2", "category": "required", "mandatory": false, "text": "Process modeling using BPMN or similar notation", "terms": ["BPMN"], "direct": ["b02"], "related": ["b14"]},
+        {"id": "R3", "category": "required", "mandatory": false, "text": "Write user stories and acceptance criteria", "terms": ["user stories", "acceptance criteria"], "direct": ["b01", "b03"], "related": ["b14", "b18"]},
+        {"id": "R4", "category": "responsibility", "mandatory": false, "text": "Coordinate user acceptance testing (UAT)", "terms": ["UAT"], "direct": ["b03"], "related": []},
+        {"id": "R5", "category": "responsibility", "mandatory": false, "text": "Serve as a bridge between business stakeholders and technical teams", "terms": [], "direct": ["b05"], "related": ["b19", "b01", "s04"]},
+        {"id": "R6", "category": "preferred", "mandatory": false, "text": "Experience working in Agile or Scrum teams", "terms": ["Agile", "Scrum"], "direct": ["b18", "b17"], "related": ["b14", "b05"]},
+        {"id": "R7", "category": "preferred", "mandatory": false, "text": "Basic SQL for data analysis", "terms": ["SQL"], "direct": ["b04", "d01", "d09"], "related": ["b13", "d17"]},
+        {"id": "R8", "category": "preferred", "mandatory": false, "text": "Supply chain or logistics domain knowledge", "terms": ["logistics"], "direct": ["b02", "b08", "b10"], "related": ["b04", "b06", "b09"]},
+        {"id": "R9", "category": "preferred", "mandatory": false, "text": "CBAP or ECBA certification", "terms": ["CBAP", "ECBA"], "direct": ["b16"], "related": []},
+        {"id": "R10", "category": "required", "mandatory": false, "text": "Experience with SAP", "terms": ["SAP"], "direct": [], "related": []}
+      ]
+    },
+    {
+      "id": "ba-2", "role": "Business Analyst", "profile": "ba", "title": "Business Systems Analyst", "company": "Fictional Mutual Insurance",
+      "requirements": [
+        {"id": "R1", "category": "required", "mandatory": false, "text": "Build business cases and cost-benefit analyses", "terms": ["cost-benefit"], "direct": ["b06"], "related": ["b04"]},
+        {"id": "R2", "category": "responsibility", "mandatory": false, "text": "Facilitate stakeholder meetings to prioritize changes", "terms": ["stakeholder"], "direct": ["b19"], "related": ["b01", "b05"]},
+        {"id": "R3", "category": "responsibility", "mandatory": false, "text": "Support training and change management for new processes", "terms": ["training"], "direct": ["b07"], "related": ["g19"]},
+        {"id": "R4", "category": "preferred", "mandatory": false, "text": "Insurance industry experience", "terms": ["insurance"], "direct": ["b11"], "related": ["g08", "g11"]},
+        {"id": "R5", "category": "preferred", "mandatory": false, "text": "Experience with Power BI reporting", "terms": ["Power BI"], "direct": ["d02"], "related": ["b13", "d17", "d21"]},
+        {"id": "R6", "category": "required", "mandatory": false, "text": "Identify and recommend process improvements", "terms": ["process improvements"], "direct": ["b10", "b09"], "related": ["b02", "d03"]},
+        {"id": "R7", "category": "preferred", "mandatory": false, "text": "Experience with Guidewire", "terms": ["Guidewire"], "direct": [], "related": []},
+        {"id": "R8", "category": "responsibility", "mandatory": false, "text": "Maintain the product backlog with the product owner", "terms": ["backlog"], "direct": ["b18"], "related": ["b05"]}
+      ]
+    },
+    {
+      "id": "sales-1", "role": "Tech Sales", "profile": "sales", "title": "Account Executive", "company": "Fictional Data Platform",
+      "requirements": [
+        {"id": "R1", "category": "required", "mandatory": true, "text": "Proven track record of meeting or exceeding quota", "terms": ["quota"], "direct": ["s01"], "related": ["s09", "s06"]},
+        {"id": "R2", "category": "required", "mandatory": false, "text": "Experience selling SaaS to mid-market or enterprise customers", "terms": ["SaaS"], "direct": ["s01", "s02"], "related": ["s05", "s06"]},
+        {"id": "R3", "category": "required", "mandatory": false, "text": "Experience with Salesforce CRM", "terms": ["Salesforce"], "direct": ["s03"], "related": ["s11", "s14"]},
+        {"id": "R4", "category": "responsibility", "mandatory": false, "text": "Run discovery and deliver product demonstrations", "terms": ["discovery"], "direct": ["s02"], "related": ["s17", "s04"]},
+        {"id": "R5", "category": "responsibility", "mandatory": false, "text": "Build and manage a healthy pipeline and forecast accurately", "terms": ["pipeline", "forecast"], "direct": ["s03"], "related": ["s16", "s07"]},
+        {"id": "R6", "category": "preferred", "mandatory": false, "text": "Familiarity with MEDDIC or a similar sales methodology", "terms": ["MEDDIC"], "direct": ["s12"], "related": []},
+        {"id": "R7", "category": "responsibility", "mandatory": false, "text": "Negotiate and close contracts with senior buyers", "terms": ["contracts"], "direct": ["s05"], "related": ["s01"]},
+        {"id": "R8", "category": "preferred", "mandatory": false, "text": "Comfortable discussing APIs and integrations with technical buyers", "terms": ["APIs", "integrations"], "direct": ["s04"], "related": ["s10"]},
+        {"id": "R9", "category": "required", "mandatory": true, "text": "5+ years of closing experience in enterprise software", "terms": [], "direct": [], "related": ["s01", "s05"]},
+        {"id": "R10", "category": "preferred", "mandatory": false, "text": "Experience selling to data engineering teams", "terms": ["data engineering"], "direct": [], "related": []}
+      ]
+    },
+    {
+      "id": "sales-2", "role": "Tech Sales", "profile": "sales", "title": "Account Manager", "company": "Fictional Fintech",
+      "requirements": [
+        {"id": "R1", "category": "required", "mandatory": false, "text": "Grow revenue within existing accounts through upsell and expansion", "terms": ["upsell", "expansion"], "direct": ["s06"], "related": ["s15"]},
+        {"id": "R2", "category": "responsibility", "mandatory": false, "text": "Lead quarterly business reviews with customer executives", "terms": ["quarterly business reviews"], "direct": ["s15"], "related": []},
+        {"id": "R3", "category": "preferred", "mandatory": false, "text": "Experience with finance or accounting software", "terms": ["accounting software"], "direct": ["s02"], "related": ["s01", "s05", "g12"]},
+        {"id": "R4", "category": "required", "mandatory": false, "text": "Strong outbound prospecting skills", "terms": ["prospecting"], "direct": ["s07", "s08"], "related": ["s16"]},
+        {"id": "R5", "category": "preferred", "mandatory": false, "text": "Experience with Gong or conversation intelligence tools", "terms": ["Gong"], "direct": ["s11"], "related": []},
+        {"id": "R6", "category": "responsibility", "mandatory": false, "text": "Coach and mentor junior team members", "terms": ["mentor"], "direct": ["s17"], "related": []},
+        {"id": "R7", "category": "preferred", "mandatory": false, "text": "Experience with HubSpot", "terms": ["HubSpot"], "direct": ["s11"], "related": []},
+        {"id": "R8", "category": "required", "mandatory": false, "text": "Fluency in German", "terms": ["German"], "direct": [], "related": []}
+      ]
+    }
+  ]
+}

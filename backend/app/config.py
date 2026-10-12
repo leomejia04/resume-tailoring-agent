@@ -12,6 +12,8 @@ from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
+# Git-ignored; one folder per pinned revision (see app/retrieval/embedder.py).
+_MODEL_DIR = Path(__file__).resolve().parents[1] / ".models" / "all-MiniLM-L6-v2"
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
 _DEV_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"]
 
@@ -111,6 +113,21 @@ class Settings(BaseSettings):
     auto_improve: bool = True
     # Manual application tracker: entries per user (abuse guard for free text).
     max_applications_per_user: int = Field(default=1000, ge=1, le=10_000)
+
+    # --- Retrieval (milestone 7, ADR 0010). Embeddings run locally on CPU from
+    # a pinned snapshot fetched by `python -m scripts.fetch_embedding_model`;
+    # nothing is downloaded at runtime. "full": send every confirmed fact (the
+    # baseline). "hybrid": per-requirement exact + full-text + semantic search,
+    # with full-context fallback. "auto": full context while the profile fits
+    # both retrieval_full_context_max_chars and max_context_chars, hybrid above.
+    # The default equals max_context_chars: measured retrieval drops supporting
+    # facts and saves under a tenth of a cent per draft on profiles that fit,
+    # so it is used only when the full profile would otherwise be cut.
+    retrieval_mode: Literal["auto", "full", "hybrid"] = "auto"
+    retrieval_full_context_max_chars: int = Field(default=60_000, ge=0, le=400_000)
+    retrieval_top_k: int = Field(default=4, ge=1, le=20)
+    embedding_model_dir: Path = _MODEL_DIR
+    embedding_threads: int = Field(default=2, ge=1, le=8)
 
     @field_validator("cors_allowed_origins", "trusted_origins", mode="before")
     @classmethod

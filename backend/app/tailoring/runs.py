@@ -48,6 +48,7 @@ from app.db.models import (
 from app.documents.extract import find_metrics, plain_text
 from app.jobs import queue
 from app.render.format import FormatPreferences
+from app.retrieval.service import retrieve_for_draft
 from app.storage import (
     SignedObject,
     StorageObjectMissingError,
@@ -55,12 +56,14 @@ from app.storage import (
     StorageUnavailableError,
 )
 from app.tailoring.analysis import find_gaps, normalize_analysis, question_for
-from app.tailoring.context import build_context, draft_payload
+from app.tailoring.context import build_context, draft_payload, subset_context
 from app.tailoring.models import AnalysisContent
 from app.tailoring.validate import check, contains_term, finalize
 
 logger = logging.getLogger("app.tailoring")
 T = TypeVar("T", bound=BaseModel)
+# Character budget for the "every confirmed fact" view used for omissions.
+ALL_FACTS = 10**9
 
 TRANSITIONS: dict[str, set[str]] = {
     "queued": {"analyzing", "failed", "cancelled"},
@@ -552,13 +555,17 @@ def generate_draft(
         run = _owned_run(db, user, run_id)
         if run.analysis_id is None:
             raise ApiError(409, "invalid_state", "Analyze the job posting before drafting.")
-        context = build_context(_verified_rows(db, user), settings.max_context_chars)
-        if not context.facts:
+        analysis_id = run.analysis_id
+        rows = _verified_rows(db, user)
+        for record, version in rows:
+            db.expunge(record)
+            db.expunge(version)
+        if not rows:
             raise ApiError(
                 409, "no_confirmed_facts", "Confirm at least one fact on the Experience page first."
             )
         analysis = AnalysisContent.model_validate(
-            db.scalars(select(JobAnalysis.content).where(JobAnalysis.id == run.analysis_id)).one()
+            db.scalars(select(JobAnalysis.content).where(JobAnalysis.id == analysis_id)).one()
         )
         posting = db.execute(
             select(JobPosting.title, JobPosting.company)
@@ -568,6 +575,13 @@ def generate_draft(
         if run.status != "drafting":  # "drafting": a crashed attempt is resuming
             transition(db, run, "drafting")
 
+    # Which facts the model reads: all of them, or a retrieved selection (ADR 0010).
+    retrieved = retrieve_for_draft(settings, user, run_id, analysis_id, analysis, rows)
+    everything = build_context(rows, ALL_FACTS)
+    if retrieved.mode == "full":
+        context = build_context(rows, settings.max_context_chars)
+    else:
+        context = subset_context(everything, retrieved.selected)
     payload = draft_payload(context, analysis, posting.title, posting.company)
     common = {
         "run_id": run_id,
@@ -607,7 +621,7 @@ def generate_draft(
         checked = check(output, context, analysis)
         repaired = True
 
-    content, report = finalize(output, context, analysis, checked, repaired)
+    content, report = finalize(output, context, analysis, checked, repaired, everything)
     with user_db(settings, user) as db:
         remembered = db.scalar(select(Profile.preferences).where(Profile.user_id == user.id))
         if remembered:
@@ -637,6 +651,7 @@ def generate_draft(
                 created_by="repair" if repaired else "generation",
                 model=result.model,
                 prompt_version=prompts.TAILOR_VERSION,
+                retrieval_id=retrieved.retrieval_id,
             )
         )
         db.flush()

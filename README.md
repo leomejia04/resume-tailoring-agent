@@ -3,7 +3,7 @@
 A hosted, multi-user application for creating truthful, tailored, one-page PDF
 resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md).
 
-**Current state:** milestones 1-6 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 added saved ATS match estimates required for approval (6a-6b), a durable background worker with bounded retries and crash recovery (6c), up to two automatic, fact-checked improvement attempts per run (6d), and a private manual application tracker (6e). Measured retrieval (RAG, milestone 7) is next.
+**Current state:** milestones 1-7 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 added saved ATS match estimates required for approval (6a-6b), a durable background worker with bounded retries and crash recovery (6c), up to two automatic, fact-checked improvement attempts per run (6d), and a private manual application tracker (6e). Milestone 7 added measured retrieval (ADR 0010): local embeddings, pgvector hybrid search, and a labeled evaluation; live drafts showed the full profile works best for normal-sized profiles, so retrieval is used only when a profile is too large to send whole.
 
 - Document proof: a fictional master DOCX is edited in a copy with formatting
   preserved, rendered to PDF in a sandboxed LibreOffice container, and inspected.
@@ -44,6 +44,7 @@ backend/app/ai/           model clients (OpenAI, demo), prompts, pricing, budget
 backend/app/tailoring/    job analysis, gaps/questions, drafting, validation, review/approval
 backend/app/render/       template-aware and reconstructed DOCX rendering, one-page fitting
 backend/app/ats/          ATS match estimate: matching, passages, rubric scoring, improvement rules (ADR 0006, 0008)
+backend/app/retrieval/    local embeddings, fact index, exact/full-text/semantic search, selection (ADR 0010)
 backend/app/api/          FastAPI routes (/api/v1), error envelope, middleware
 backend/app/auth/         session cookies, JWT verification, CSRF, rate limits
 backend/app/db/           SQLAlchemy models and per-user sessions
@@ -52,7 +53,8 @@ backend/app/services/     deterministic job-text processing
 backend/app/documents/    DOCX editing, verification, conversion, PDF inspection, uploads, extraction
 backend/migrations/       Alembic migrations (schema, roles, RLS, storage policies)
 backend/tests/            pytest suite (test_isolation.py needs the local Supabase stack)
-backend/scripts/          document_proof.py, local_env.py
+backend/scripts/          document_proof.py, local_env.py, fetch_embedding_model.py, eval_retrieval.py
+backend/evaluation/       labeled fictional retrieval set and metrics (ADR 0010)
 frontend/src/             React + TypeScript app (api client, auth, pages, components)
 supabase/                 local Supabase configuration and email templates
 docker/converter/         LibreOffice + fonts converter image
@@ -88,6 +90,15 @@ python -m venv .venv
 
 ```bash
 .venv/Scripts/pip install --require-hashes -r requirements.txt -r requirements-dev.txt
+```
+
+Download the pinned embedding model used for retrieval (about 90 MB, into
+git-ignored `backend/.models/`; every file is checked against a SHA-256 in
+`app/retrieval/embedder.py`). Without it, drafting still works and sends the
+full verified profile instead of a retrieved selection:
+
+```bash
+.venv/Scripts/python -m scripts.fetch_embedding_model
 ```
 
 Frontend dependencies (from `frontend/`), installed exactly from the lockfile:
@@ -243,6 +254,22 @@ Document proof (from `backend/`; writes files to git-ignored `backend/out/proof/
 .venv/Scripts/python -m scripts.document_proof
 ```
 
+Retrieval evaluation (from `backend/`; local stack and fetched model required,
+no paid calls; creates fictional accounts in the local database and writes
+results to git-ignored `backend/out/eval/`, ADR 0010):
+
+```bash
+.venv/Scripts/python -m scripts.eval_retrieval
+```
+
+Live draft comparison, full profile vs retrieval (PAID: needs `OPENAI_API_KEY`
+and an explicit cap; refuses to run without one and stops before the next
+draft could exceed it; `--demo` checks the plumbing for free):
+
+```bash
+.venv/Scripts/python -m scripts.eval_drafts --budget-usd 1.00
+```
+
 ## Configuration
 
 Environment variables (see [.env.example](.env.example)):
@@ -279,6 +306,11 @@ Environment variables (see [.env.example](.env.example)):
 | `GRANT_TTL_SECONDS` | `3600` | Lifetime of signed download URLs handed to a job |
 | `AUTO_IMPROVE` | `true` | Queue bounded automatic ATS improvement after each draft (at most 2 attempts per run, ADR 0008); users can still start it from the run page |
 | `MAX_APPLICATIONS_PER_USER` | `1000` | Application tracker entries per user (409 `tracker_full` beyond it) |
+| `RETRIEVAL_MODE` | `auto` | `auto`: the full profile whenever it fits the drafting budget, else hybrid retrieval; `full`: always the full profile; `hybrid`: always retrieve (ADR 0010) |
+| `RETRIEVAL_FULL_CONTEXT_MAX_CHARS` | `60000` | In `auto`, profiles up to this size (and within `MAX_CONTEXT_CHARS`) are sent whole |
+| `RETRIEVAL_TOP_K` | `4` | Facts kept per job requirement by hybrid retrieval |
+| `EMBEDDING_MODEL_DIR` | `backend/.models/all-MiniLM-L6-v2` | Where the pinned model snapshot lives |
+| `EMBEDDING_THREADS` | `2` | CPU threads for embeddings |
 | `PRICE_*_PER_MTOK` | official rates | Used for cost accounting |
 
 ## Updating dependencies
@@ -287,8 +319,11 @@ Python: edit `backend/requirements.in` or `requirements-dev.in`, then re-lock
 (slow: hashes every platform's wheels):
 
 ```bash
-.venv/Scripts/pip-compile --generate-hashes --strip-extras -o requirements.txt requirements.in
+.venv/Scripts/pip-compile --allow-unsafe --generate-hashes --strip-extras -o requirements.txt requirements.in
 ```
+
+`--allow-unsafe` pins `setuptools`, which torch requires on Python 3.12+;
+without the pin the hash-checked install fails.
 
 ```bash
 .venv/Scripts/pip-compile --generate-hashes --strip-extras -o requirements-dev.txt requirements-dev.in

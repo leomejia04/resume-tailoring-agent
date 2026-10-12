@@ -67,6 +67,16 @@ class SourceFact(BaseModel):
     experience_type: str
 
 
+class ContextOut(BaseModel):
+    """Which confirmed facts the AI read when it last generated this draft (ADR 0010)."""
+
+    mode: Literal["full", "hybrid"]
+    reason: str
+    facts_selected: int
+    facts_total: int
+    draft_version: int
+
+
 class DraftOut(BaseModel):
     version: int
     content: DraftContent
@@ -76,6 +86,7 @@ class DraftOut(BaseModel):
     prompt_version: str | None
     created_at: datetime
     sources: dict[uuid.UUID, SourceFact]
+    context: ContextOut | None = None
 
 
 class ArtifactOut(BaseModel):

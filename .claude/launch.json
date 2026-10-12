@@ -50,6 +50,32 @@
       "port": 8001
     },
     {
+      "name": "backend-hybrid",
+      "runtimeExecutable": "backend/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "--app-dir",
+        "backend",
+        "app.main:create_app",
+        "--factory",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8001",
+        "--no-server-header",
+        "--no-access-log"
+      ],
+      "env": {
+        "TRUSTED_ORIGINS": "http://127.0.0.1:5174",
+        "RETRIEVAL_MODE": "hybrid",
+        "JOB_RUNNER": "inline",
+        "LLM_PROVIDER": "demo",
+        "HF_HUB_OFFLINE": "1"
+      },
+      "port": 8001
+    },
+    {
       "name": "frontend-alt",
       "runtimeExecutable": "node",
       "runtimeArgs": [

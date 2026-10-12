@@ -119,9 +119,12 @@ class Settings(BaseSettings):
     # nothing is downloaded at runtime. "full": send every confirmed fact (the
     # baseline). "hybrid": per-requirement exact + full-text + semantic search,
     # with full-context fallback. "auto": full context while the profile fits
-    # retrieval_full_context_max_chars, hybrid above it.
+    # both retrieval_full_context_max_chars and max_context_chars, hybrid above.
+    # The default equals max_context_chars: measured retrieval drops supporting
+    # facts and saves under a tenth of a cent per draft on profiles that fit,
+    # so it is used only when the full profile would otherwise be cut.
     retrieval_mode: Literal["auto", "full", "hybrid"] = "auto"
-    retrieval_full_context_max_chars: int = Field(default=12_000, ge=0, le=400_000)
+    retrieval_full_context_max_chars: int = Field(default=60_000, ge=0, le=400_000)
     retrieval_top_k: int = Field(default=4, ge=1, le=20)
     embedding_model_dir: Path = _MODEL_DIR
     embedding_threads: int = Field(default=2, ge=1, le=8)

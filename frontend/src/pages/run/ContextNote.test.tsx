@@ -16,6 +16,12 @@ describe('ContextNote', () => {
     expect(note.textContent).not.toMatch(/hybrid|retrieval|embedding/i)
   })
 
+  it('does not imply facts were left out when a selection kept them all', () => {
+    render(<ContextNote context={{ mode: 'hybrid', reason: 'relevance', facts_selected: 5, facts_total: 5, draft_version: 1 }} />)
+    expect(screen.getByText(/the AI read all 5 confirmed facts\./)).toBeInTheDocument()
+    expect(screen.queryByText(/most relevant/)).toBeNull()
+  })
+
   it('renders nothing for older drafts without context', () => {
     const { container } = render(<ContextNote context={null} />)
     expect(container).toBeEmptyDOMElement()

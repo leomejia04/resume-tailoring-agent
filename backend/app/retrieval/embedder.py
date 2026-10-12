@@ -149,7 +149,9 @@ def load_embedder(settings: Settings) -> SentenceTransformerEmbedder:
         try:
             import torch
             from sentence_transformers import SentenceTransformer
+            from transformers.utils import logging as transformers_logging
 
+            transformers_logging.disable_progress_bar()  # keep worker logs to our own lines
             torch.set_num_threads(settings.embedding_threads)
             model = SentenceTransformer(
                 str(directory),
@@ -160,7 +162,7 @@ def load_embedder(settings: Settings) -> SentenceTransformerEmbedder:
         except Exception as exc:  # import or load failure: retrieval falls back
             logger.error("embedding model failed to load error=%s", type(exc).__name__)
             raise EmbeddingUnavailableError("the embedding model could not be loaded") from exc
-        dimension = model.get_sentence_embedding_dimension()
+        dimension = model.get_embedding_dimension()
         if dimension != DIMENSION:
             raise EmbeddingUnavailableError(f"unexpected embedding dimension {dimension}")
         model.max_seq_length = MAX_TOKENS

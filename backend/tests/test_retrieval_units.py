@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from app.ai.schemas import TailoredDraftOut
+from app.config import Settings
 from app.retrieval import embedder as embedder_module
 from app.retrieval.index import FactRef, chunk_context, chunk_fact
 from app.retrieval.search import (
@@ -24,6 +25,7 @@ from app.retrieval.selection import (
     full_selection,
     select_hybrid,
 )
+from app.retrieval.service import full_context_reason
 from app.tailoring.context import build_context, subset_context
 from app.tailoring.models import AnalysisContent, Requirement
 from app.tailoring.validate import check, finalize
@@ -211,6 +213,25 @@ def test_full_selection_lists_every_fact():
     facts = [fact("a"), fact("b")]
     selection = full_selection(facts, "small_profile")
     assert selection.mode == "full" and selection.selected == [f.evidence_id for f in facts]
+
+
+@pytest.mark.parametrize(
+    ("overrides", "has_requirements", "chars", "expected"),
+    [
+        ({"retrieval_mode": "full"}, True, 999_999, "configured"),
+        ({}, False, 999_999, "no_requirements"),
+        ({}, True, 60_000, "small_profile"),  # fits the drafting budget: send it all
+        ({}, True, 60_001, None),  # would be cut by position: retrieve instead
+        ({"max_context_chars": 20_000}, True, 30_000, None),  # the smaller limit wins
+        ({"retrieval_full_context_max_chars": 1000}, True, 1001, None),
+        ({"retrieval_mode": "hybrid"}, True, 10, None),
+    ],
+)
+def test_auto_mode_retrieves_only_when_the_profile_would_not_fit(
+    overrides, has_requirements, chars, expected
+):
+    settings = Settings(_env_file=None, **overrides)
+    assert full_context_reason(settings, has_requirements, chars) == expected
 
 
 # --- Context subset and omissions ----------------------------------------------------------

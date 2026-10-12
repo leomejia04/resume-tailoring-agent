@@ -9,8 +9,8 @@ Modes and reasons (stored with every row):
 - full / configured: RETRIEVAL_MODE=full.
 - full / no_requirements: the analysis lists nothing to search for.
 - full / small_profile: RETRIEVAL_MODE=auto and every confirmed fact fits
-  RETRIEVAL_FULL_CONTEXT_MAX_CHARS, so nothing would be gained by leaving
-  facts out.
+  RETRIEVAL_FULL_CONTEXT_MAX_CHARS and the drafting budget (MAX_CONTEXT_CHARS),
+  so leaving facts out would only risk losing evidence (ADR 0010 measurements).
 - full / embeddings_unavailable: the local model is missing or failed to load
   (logged); full context is the safe fallback.
 - hybrid / relevance: per-requirement search and the selection policy.
@@ -122,6 +122,18 @@ def _chars_within(facts: Sequence[ProfileFact], ids: set[uuid.UUID], budget: int
     return count, chars
 
 
+def full_context_reason(settings: Settings, has_requirements: bool, chars_total: int) -> str | None:
+    """Why the full profile is sent without searching, or None to retrieve."""
+    if settings.retrieval_mode == "full":
+        return "configured"
+    if not has_requirements:
+        return "no_requirements"
+    fits = min(settings.retrieval_full_context_max_chars, settings.max_context_chars)
+    if settings.retrieval_mode == "auto" and chars_total <= fits:
+        return "small_profile"
+    return None
+
+
 def _hybrid(
     settings: Settings,
     user: VerifiedUser,
@@ -178,16 +190,8 @@ def retrieve_for_draft(
     chars_total = sum(f.cost for f in facts)
     embedder: Embedder | None = None
     revision = MODEL_REVISION
-    if settings.retrieval_mode == "full":
-        reason = "configured"
-    elif not analysis.requirements:
-        reason = "no_requirements"
-    elif (
-        settings.retrieval_mode == "auto"
-        and chars_total <= settings.retrieval_full_context_max_chars
-    ):
-        reason = "small_profile"
-    else:
+    reason = full_context_reason(settings, bool(analysis.requirements), chars_total)
+    if reason is None:
         try:
             embedder = (loader or load_embedder)(settings)
             reason = "relevance"

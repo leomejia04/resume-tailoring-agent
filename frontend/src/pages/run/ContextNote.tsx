@@ -6,7 +6,8 @@ const facts = (n: number) => `${n} confirmed fact${n === 1 ? '' : 's'}`
 export function ContextNote({ context }: { context: DraftContext | null | undefined }) {
   if (!context) return null
   const version = `version ${context.draft_version}`
-  if (context.mode === 'full') {
+  // A relevance selection that kept everything reads the same as the full profile.
+  if (context.mode === 'full' || context.facts_selected >= context.facts_total) {
     return (
       <p className="text-sm text-slate-600">
         When it wrote {version}, the AI read all {facts(context.facts_selected)}

@@ -268,3 +268,40 @@ Short notes on concepts introduced while building, in plain language.
 - **Dates without times.** `new Date('2026-10-01')` means midnight UTC, which
   is still September 30 in the Americas. A calendar date is shown by building
   it from its parts in local time.
+
+## Milestone 7: measured retrieval
+
+- **An embedding is a list of numbers that places a sentence by meaning.**
+  `all-MiniLM-L6-v2` turns any text into 384 numbers. Sentences with similar
+  meaning land near each other even without shared words ("vendor risk
+  assessments" near "rated each supplier's risk").
+- **Cosine similarity and normalization.** Similarity is the angle between
+  two vectors. If every vector is scaled to length 1 ("L2-normalized"), the
+  cosine is just the dot product, which is cheap and comparable across
+  queries.
+- **Full-text search is not `LIKE '%sql%'`.** Postgres splits text into
+  words, stems them ("reporting" -> "report"), drops stop words, and ranks
+  by how often and how close the query words occur. It finds word variants;
+  embeddings find meaning; the exact matcher finds precise terms. Each
+  misses things the others catch.
+- **Reciprocal Rank Fusion.** Scores from different searches are not on the
+  same scale, but ranks are. RRF gives each fact `1 / (60 + rank)` from each
+  list and adds them up, so a fact that is near the top of several lists
+  wins without any tuning.
+- **Exact vs approximate vector search.** An exact search compares the query
+  with every row. Approximate indexes (HNSW, IVFFlat) skip most rows to be
+  fast on millions of vectors, at the cost of sometimes missing the best
+  match. One user's few hundred facts do not need that trade.
+- **Precision and recall at k.** Recall@5: of the facts a person would pick,
+  how many are in the top 5? Precision@3: of the top 3, how many are right?
+  For building a resume, missing a supporting fact (low recall) is worse
+  than reading an extra one, which is why the selection keeps several facts
+  per requirement plus fallbacks.
+- **Measure the baseline first.** "RAG" is not automatically better. Sending
+  every fact is complete by definition; retrieval only earns its place where
+  the profile is too big to send, or where it measurably saves cost without
+  losing evidence.
+- **Pin and verify downloaded models.** A model name on a hub can change
+  under you. A fixed revision plus a SHA-256 for every file means the bytes
+  you tested are the bytes you run, and `trust_remote_code=False` means
+  loading the model never runs code from the download.

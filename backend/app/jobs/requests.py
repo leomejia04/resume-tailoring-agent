@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.ai import client as ai_client
@@ -20,7 +20,16 @@ from app.api.errors import ApiError
 from app.auth.dependencies import unavailable, user_db
 from app.auth.tokens import VerifiedUser
 from app.config import Settings
-from app.db.models import Artifact, ChatMessage, Draft, DraftVersion, Job, TailoringRun
+from app.db.models import (
+    MAX_IMPROVEMENT_ATTEMPTS,
+    Artifact,
+    ChatMessage,
+    Draft,
+    DraftVersion,
+    ImprovementAttempt,
+    Job,
+    TailoringRun,
+)
 from app.jobs import queue, runner
 from app.storage import (
     StorageObjectMissingError,
@@ -146,6 +155,28 @@ def request_chat(
         params = {"message_id": str(chat.id), "expected_version": expected}
         job_id = queue.enqueue(db, settings, user.id, run_id, "chat", params).id
         db.add(chat)
+    _dispatch(settings, user.id, job_id)
+
+
+def request_improve(
+    settings: Settings, user: VerifiedUser, run_id: uuid.UUID, expected: int
+) -> None:
+    """Retry automatic improvement (ADR 0008); attempts left for the run are checked here
+    for a clear answer, and enforced again by the database when an attempt starts."""
+    _require_ai(settings)
+    with user_db(settings, user) as db:
+        run, _, _ = _current_version(db, user, run_id, expected)
+        if run.analysis_id is None:
+            raise ApiError(409, "invalid_state", "Analyze the job posting first.")
+        used = db.scalar(select(func.count()).where(ImprovementAttempt.run_id == run_id)) or 0
+        if used >= MAX_IMPROVEMENT_ATTEMPTS:
+            raise ApiError(
+                409,
+                "improve_limit",
+                "Automatic improvement was already tried twice for this run.",
+            )
+        params = {"expected_version": expected}
+        job_id = queue.enqueue(db, settings, user.id, run_id, "improve", params).id
     _dispatch(settings, user.id, job_id)
 
 

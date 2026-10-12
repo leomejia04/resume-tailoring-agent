@@ -54,15 +54,18 @@ RUN_STATUSES = (
     "cancelled",
 )
 QUESTION_STATUSES = ("open", "confirmed", "declined", "dismissed")
-DRAFT_SOURCES = ("generation", "repair", "edit", "chat")
+DRAFT_SOURCES = ("generation", "repair", "edit", "chat", "improve")
 ATS_REPORT_KINDS = ("master_baseline", "draft", "final_pdf")
 # "stale" is never stored: it is derived when a report no longer matches the run.
 ATS_REPORT_STATUSES = ("pending", "complete", "failed")
-JOB_KINDS = ("analyze", "draft", "regenerate", "chat", "render", "ats_check")
+JOB_KINDS = ("analyze", "draft", "regenerate", "chat", "improve", "render", "ats_check")
 # At most one active job per run and lane: workflow jobs change the run or its draft.
 JOB_LANES = ("workflow", "render", "ats")
 JOB_STATUSES = ("queued", "running", "succeeded", "failed", "cancelled")
 GRANT_PURPOSES = ("master_read", "artifact_read", "pdf_upload", "docx_upload")
+IMPROVEMENT_STATUSES = ("running", "saved", "rejected", "failed")
+# Automatic ATS improvement attempts per run; the attempt_range constraint enforces it.
+MAX_IMPROVEMENT_ATTEMPTS = 2
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -734,3 +737,46 @@ class ChatMessage(Base):
     content: Mapped[str] = mapped_column(String(2000), nullable=False)
     draft_version: Mapped[int | None] = mapped_column(Integer)
     created_at: Mapped[datetime] = _created_at()
+
+
+class ImprovementAttempt(Base):
+    """One automatic ATS improvement attempt for a run (milestone 6d, ADR 0008).
+
+    The row is inserted before any work starts, so the unique (run, attempt)
+    pair and the attempt range cap attempts per run even across job retries
+    and worker restarts. ``targets`` holds requirement IDs only.
+    """
+
+    __tablename__ = "improvement_attempts"
+    __table_args__ = (
+        UniqueConstraint("run_id", "attempt", name="uq_improvement_attempts_run_attempt"),
+        _owner_fk(["run_id", "owner_id"], "tailoring_runs", "fk_improvement_attempts_run_owner"),
+        _owner_fk(["job_id", "owner_id"], "jobs", "fk_improvement_attempts_job_owner"),
+        CheckConstraint(f"attempt BETWEEN 1 AND {MAX_IMPROVEMENT_ATTEMPTS}", name="attempt_range"),
+        CheckConstraint(_in("status", IMPROVEMENT_STATUSES), name="status"),
+        CheckConstraint("(status = 'saved') = (new_version IS NOT NULL)", name="saved_has_version"),
+        CheckConstraint("(status = 'running') = (outcome IS NULL)", name="finished_has_outcome"),
+        CheckConstraint(
+            "score_before IS NULL OR score_before BETWEEN 0 AND 100", name="score_before_range"
+        ),
+        CheckConstraint(
+            "score_after IS NULL OR score_after BETWEEN 0 AND 100", name="score_after_range"
+        ),
+        Index("ix_improvement_attempts_owner_run", "owner_id", "run_id"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    owner_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), _auth_user_fk(), nullable=False)
+    run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    job_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="running")
+    base_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    new_version: Mapped[int | None] = mapped_column(Integer)
+    targets: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
+    score_before: Mapped[int | None] = mapped_column(Integer)
+    score_after: Mapped[int | None] = mapped_column(Integer)
+    # Why the attempt ended: improved, no_improvement, unsupported_changes, ... (ADR 0008).
+    outcome: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[datetime] = _created_at()
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

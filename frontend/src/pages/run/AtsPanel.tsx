@@ -3,6 +3,7 @@ import { runAtsCheck } from '../../api/client'
 import { messageOf } from '../../api/errors'
 import type { AtsComparison, AtsReport, AtsRequirement, AtsResult, RequirementStatus, RunOut } from '../../api/types'
 import { Alert } from '../../components/Alert'
+import { ImproveSection } from './ImproveSection'
 import { failure, isActive, jobOf, progress } from './jobs'
 
 const CATEGORY_LABELS = {
@@ -212,7 +213,16 @@ function Details({ result, source, comparison }: { result: AtsResult; source: st
   )
 }
 
-export function AtsPanel({ run, onRun }: { run: RunOut; onRun: (run: RunOut) => void }) {
+export function AtsPanel({
+  run,
+  onRun,
+  canImprove = true,
+}: {
+  run: RunOut
+  onRun: (run: RunOut) => void
+  /** False when no AI provider is configured (the server would refuse). */
+  canImprove?: boolean
+}) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<{ message: string; requestId: string | null } | null>(null)
   const ats = run.ats
@@ -298,6 +308,7 @@ export function AtsPanel({ run, onRun }: { run: RunOut; onRun: (run: RunOut) => 
           {busy || checking ? progress(checkJob, 'Checking…') : 'Run the check'}
         </button>
       )}
+      <ImproveSection run={run} onRun={onRun} enabled={canImprove} />
       {shown?.status === 'complete' && shown.result && (
         <Details result={shown.result} source={source} comparison={shownComparison} />
       )}

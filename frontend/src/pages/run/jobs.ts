@@ -15,9 +15,16 @@ export function anyActive(run: RunOut): boolean {
   return (run.jobs ?? []).some(isActive)
 }
 
+const DRAFT_JOBS = ['draft', 'regenerate', 'chat', 'improve'] as const
+
 /** Workflow jobs change the draft; edits wait for them to avoid version conflicts. */
 export function draftBusy(run: RunOut): boolean {
-  return (['draft', 'regenerate', 'chat'] as const).some((kind) => isActive(jobOf(run, kind)))
+  return DRAFT_JOBS.some((kind) => isActive(jobOf(run, kind)))
+}
+
+/** The workflow job changing the draft right now, if any. */
+export function activeDraftJob(run: RunOut): RunJob | undefined {
+  return DRAFT_JOBS.map((kind) => jobOf(run, kind)).find(isActive)
 }
 
 export function progress(job: RunJob | undefined, working: string): string {

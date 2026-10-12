@@ -10,8 +10,9 @@ cannot overwrite the new attempt's outcome.
 
 from __future__ import annotations
 
+import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -24,16 +25,30 @@ from app.config import Settings
 from app.db.models import Job, JobGrant
 from app.db.session import system_session, user_session
 
+logger = logging.getLogger("app.jobs")
+
 KIND_LANES = {
     "analyze": "workflow",
     "draft": "workflow",
     "regenerate": "workflow",
     "chat": "workflow",
+    "improve": "workflow",
     "render": "render",
     "ats_check": "ats",
 }
 ACTIVE = ("queued", "running")
 TERMINAL = ("succeeded", "failed", "cancelled")
+
+
+@dataclass(frozen=True)
+class FollowUp:
+    """A job queued when another succeeds, in the same transaction (so a crash
+    cannot record the success and lose the follow-up)."""
+
+    run_id: uuid.UUID
+    kind: str
+    params: dict[str, Any]
+    job_id: uuid.UUID = field(default_factory=uuid.uuid4)
 
 
 @dataclass(frozen=True)
@@ -172,11 +187,13 @@ def finish(
     error_code: str | None = None,
     result: dict[str, Any] | None = None,
     retry_in: float | None = None,
+    follow_up: FollowUp | None = None,
 ) -> bool:
     """Record an attempt's outcome if this worker still holds the job.
 
     ``status="queued"`` schedules a retry after ``retry_in`` seconds; terminal
-    statuses also delete the job's storage grants.
+    statuses also delete the job's storage grants. A ``follow_up`` is queued
+    with a success; if limits refuse it, the success still stands.
     """
     values: dict[str, Any] = {
         "status": status,
@@ -196,6 +213,19 @@ def finish(
         ).rowcount
         if moved and status in TERMINAL:
             db.execute(delete(JobGrant).where(JobGrant.job_id == job_id))
+        if moved and status == "succeeded" and follow_up is not None:
+            try:
+                enqueue(
+                    db,
+                    settings,
+                    owner_id,
+                    follow_up.run_id,
+                    follow_up.kind,
+                    follow_up.params,
+                    job_id=follow_up.job_id,
+                )
+            except ApiError as exc:
+                logger.info("follow-up skipped kind=%s code=%s", follow_up.kind, exc.code)
     return bool(moved)
 
 

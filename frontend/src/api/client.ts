@@ -315,6 +315,13 @@ export const chatRevision = (runId: string, message: string, expectedVersion: nu
     timeoutMs: AI_TIMEOUT_MS,
   })
 
+export const improveDraft = (runId: string, expectedVersion: number) =>
+  apiRequest<RunOut>(`${runPath(runId)}/draft/improve`, {
+    method: 'POST',
+    body: { expected_version: expectedVersion },
+    timeoutMs: AI_TIMEOUT_MS,
+  })
+
 export const listChat = (runId: string, signal?: AbortSignal) =>
   apiRequest<ChatMessage[]>(`${runPath(runId)}/chat`, { signal })
 

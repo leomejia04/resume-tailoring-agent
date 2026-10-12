@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     max_running_jobs_per_user: int = Field(default=1, ge=1, le=8)
     # Signed download URLs handed to a job (Supabase signed uploads last 2 hours).
     grant_ttl_seconds: int = Field(default=3600, ge=300, le=7200)
+    # Bounded automatic ATS improvement after each draft (ADR 0008): at most two
+    # attempts per run, each within the usual spending limits. Off: users can
+    # still start it from the run page.
+    auto_improve: bool = True
 
     @field_validator("cors_allowed_origins", "trusted_origins", mode="before")
     @classmethod

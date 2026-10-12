@@ -63,3 +63,9 @@ class ChatPatchOut(_Strict):
     headline: str | None
     change_summary: bool
     summary: str | None
+
+
+class ImprovePatchOut(_Strict):
+    """Entries rewritten to show targeted requirements (complete bullet lists)."""
+
+    entries: list[EntryOut]

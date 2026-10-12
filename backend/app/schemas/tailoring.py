@@ -102,12 +102,29 @@ class JobStatusOut(BaseModel):
     """Background work for a run (the latest of each kind); the UI polls while one is active."""
 
     id: uuid.UUID
-    kind: Literal["analyze", "draft", "regenerate", "chat", "render", "ats_check"]
+    kind: Literal["analyze", "draft", "regenerate", "chat", "improve", "render", "ats_check"]
     status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     attempts: int
     max_attempts: int
     error_code: str | None
     result: dict | None
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class ImprovementOut(BaseModel):
+    """One automatic ATS improvement attempt (ADR 0008); at most two per run."""
+
+    attempt: int
+    status: Literal["running", "saved", "rejected", "failed"]
+    # improved, no_improvement, new_repetition, unsupported_changes, too_long,
+    # draft_changed, interrupted, or the error code of a failed attempt.
+    outcome: str | None
+    base_version: int
+    new_version: int | None
+    targets: list[str]  # requirement IDs the attempt worked on
+    score_before: int | None
+    score_after: int | None
     created_at: datetime
     finished_at: datetime | None
 
@@ -135,6 +152,8 @@ class RunOut(BaseModel):
     # ATS match estimate reports; None until the posting has been analyzed.
     ats: AtsOverview | None = None
     jobs: list[JobStatusOut] = Field(default_factory=list)
+    improvements: list[ImprovementOut] = Field(default_factory=list)
+    improvements_left: int = 0
     usage: RunUsage
     created_at: datetime
     updated_at: datetime

@@ -3,7 +3,7 @@ import { ApiError, editDraft, regenerateEntry } from '../../api/client'
 import { messageOf } from '../../api/errors'
 import type { DraftOut, EditOperation, RunOut } from '../../api/types'
 import { Alert } from '../../components/Alert'
-import { draftBusy, failure, jobOf, progress } from './jobs'
+import { activeDraftJob, draftBusy, failure, jobOf, progress } from './jobs'
 
 interface Props {
   run: RunOut
@@ -174,8 +174,10 @@ export function DraftEditor({ run, draft, onRun, canRegenerate }: Props) {
       {revising && (
         <p role="status" className="rounded-md border border-indigo-200 bg-indigo-50 p-3 text-sm text-indigo-900">
           {progress(
-            [jobOf(run, 'draft'), regenerateJob, jobOf(run, 'chat')].find((j) => j && (j.status === 'queued' || j.status === 'running')),
-            'The AI is revising this draft…',
+            activeDraftJob(run),
+            activeDraftJob(run)?.kind === 'improve'
+              ? 'Improving the ATS match with your confirmed facts…'
+              : 'The AI is revising this draft…',
           )}{' '}
           Editing resumes when it finishes.
         </p>

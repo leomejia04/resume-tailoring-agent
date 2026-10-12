@@ -22,6 +22,7 @@ from app.auth.dependencies import current_user, enforce_limit, get_app_settings,
 from app.auth.tokens import VerifiedUser
 from app.config import Settings
 from app.db.models import (
+    MAX_IMPROVEMENT_ATTEMPTS,
     Approval,
     Artifact,
     ConfirmationQuestion,
@@ -29,6 +30,7 @@ from app.db.models import (
     DraftVersion,
     EvidenceRecord,
     EvidenceVersion,
+    ImprovementAttempt,
     JobAnalysis,
     JobPosting,
     JobPostingVersion,
@@ -44,6 +46,7 @@ from app.schemas.tailoring import (
     ArtifactOut,
     CurrentApproval,
     DraftOut,
+    ImprovementOut,
     JobCreate,
     JobOut,
     JobStatusOut,
@@ -244,6 +247,11 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
         artifact_id=artifact_out.id if artifact_out else None,
         older_pdf_version=older_pdf_version,
     )
+    attempts = db.scalars(
+        select(ImprovementAttempt)
+        .where(ImprovementAttempt.run_id == run.id, ImprovementAttempt.owner_id == user.id)
+        .order_by(ImprovementAttempt.attempt)
+    ).all()
     usage = db.execute(
         select(
             func.count(),
@@ -291,6 +299,22 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
             )
             for j in job_queue.latest_by_kind(db, run.id)
         ],
+        improvements=[
+            ImprovementOut(
+                attempt=a.attempt,
+                status=a.status,  # type: ignore[arg-type]
+                outcome=a.outcome,
+                base_version=a.base_version,
+                new_version=a.new_version,
+                targets=list(a.targets or []),
+                score_before=a.score_before,
+                score_after=a.score_after,
+                created_at=a.created_at,
+                finished_at=a.finished_at,
+            )
+            for a in attempts
+        ],
+        improvements_left=max(MAX_IMPROVEMENT_ATTEMPTS - len(attempts), 0),
         usage=RunUsage(
             calls=usage[0],
             cost_usd=Decimal(usage[1]),

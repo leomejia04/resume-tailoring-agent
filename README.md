@@ -3,7 +3,7 @@
 A hosted, multi-user application for creating truthful, tailored, one-page PDF
 resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md).
 
-**Current state:** milestones 1-5 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 is in progress: ATS match estimates are scored, saved, and required for approval (6a-6b), and slow or paid steps run in a durable background worker with bounded retries and crash recovery (6c); automatic improvements and the application tracker are next.
+**Current state:** milestones 1-5 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 is in progress: ATS match estimates are scored, saved, and required for approval (6a-6b), and slow or paid steps run in a durable background worker with bounded retries and crash recovery (6c), and each new draft gets up to two automatic, fact-checked attempts to close ATS gaps the user's confirmed facts support (6d); the application tracker is next.
 
 - Document proof: a fictional master DOCX is edited in a copy with formatting
   preserved, rendered to PDF in a sandboxed LibreOffice container, and inspected.
@@ -28,6 +28,10 @@ resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md
   PDF, with requirement-by-requirement evidence, must-have gaps, and the
   master-vs-tailored comparison. Approval requires a complete check of the
   exact PDF. It is not an employer's score.
+- Automatic improvement: after each draft, at most two attempts per run add
+  supported facts the draft left out (skill lines word for word, entries as a
+  checked patch). A version is saved only if the estimate rises without losing
+  other matches or repeating terms, and the panel says why it stopped (ADR 0008).
 
 ## Repository layout
 
@@ -35,7 +39,7 @@ resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md
 backend/app/ai/           model clients (OpenAI, demo), prompts, pricing, budgets
 backend/app/tailoring/    job analysis, gaps/questions, drafting, validation, review/approval
 backend/app/render/       template-aware and reconstructed DOCX rendering, one-page fitting
-backend/app/ats/          ATS match estimate: term matching, passages, rubric scoring (ADR 0006)
+backend/app/ats/          ATS match estimate: matching, passages, rubric scoring, improvement rules (ADR 0006, 0008)
 backend/app/api/          FastAPI routes (/api/v1), error envelope, middleware
 backend/app/auth/         session cookies, JWT verification, CSRF, rate limits
 backend/app/db/           SQLAlchemy models and per-user sessions
@@ -263,6 +267,7 @@ Environment variables (see [.env.example](.env.example)):
 | `WORKER_CONCURRENCY` / `WORKER_POLL_SECONDS` | `2` / `1.0` | Worker threads and idle polling interval |
 | `MAX_ACTIVE_JOBS_PER_USER` / `MAX_RUNNING_JOBS_PER_USER` | `4` / `1` | Per-user queue limit (429) and fair-share running limit |
 | `GRANT_TTL_SECONDS` | `3600` | Lifetime of signed download URLs handed to a job |
+| `AUTO_IMPROVE` | `true` | Queue bounded automatic ATS improvement after each draft (at most 2 attempts per run, ADR 0008); users can still start it from the run page |
 | `PRICE_*_PER_MTOK` | official rates | Used for cost accounting |
 
 ## Updating dependencies

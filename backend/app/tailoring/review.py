@@ -218,6 +218,8 @@ def save_version(
     prompt_version: str | None = None,
 ) -> int:
     """Append a version on top of ``expected_version``; a newer version means 409."""
+    if run.status == "cancelled":  # a job finishing after cancellation must not write
+        raise ApiError(409, "invalid_state", "This run was cancelled.")
     moved = db.execute(
         update(Draft)
         .where(Draft.id == draft.id, Draft.current_version == expected_version)

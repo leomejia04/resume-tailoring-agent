@@ -84,6 +84,12 @@ class RegenerateRequest(BaseModel):
     expected_version: int = Field(ge=1)
 
 
+class ImproveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_version: int = Field(ge=1)
+
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -227,6 +233,23 @@ def chat(
     """Save the instruction and queue the revision; the reply appears in the chat history."""
     enforce_limit(settings, rate_limit.AI_DRAFT_USER, str(user.id))
     job_requests.request_chat(settings, user, run_id, body.message, body.expected_version)
+    return _load_run_out(settings, user, run_id)
+
+
+@router.post("/runs/{run_id}/draft/improve", **_ACCEPTED)
+def improve(
+    run_id: uuid.UUID,
+    body: ImproveRequest,
+    user: VerifiedUser = Depends(current_user),
+    settings: Settings = Depends(get_app_settings),
+) -> RunOut:
+    """Queue automatic improvement again (it also runs by itself after each draft).
+
+    At most two attempts per run in total; each saves a version only if it
+    raises the ATS match estimate using confirmed facts (ADR 0008).
+    """
+    enforce_limit(settings, rate_limit.AI_DRAFT_USER, str(user.id))
+    job_requests.request_improve(settings, user, run_id, body.expected_version)
     return _load_run_out(settings, user, run_id)
 
 

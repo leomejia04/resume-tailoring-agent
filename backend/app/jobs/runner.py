@@ -13,6 +13,7 @@ import logging
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -27,7 +28,7 @@ from app.db.models import Job, TailoringRun
 from app.db.session import user_session
 from app.documents.convert import ConversionError, ConversionUnavailableError
 from app.jobs import queue
-from app.jobs.handlers import HANDLERS, on_failure
+from app.jobs.handlers import HANDLERS, follow_up, on_failure
 from app.storage import StorageObjectMissingError, StorageRejectedError, StorageUnavailableError
 
 logger = logging.getLogger("app.jobs")
@@ -137,7 +138,13 @@ def context_for(settings: Settings, job: Job) -> JobContext:
     )
 
 
-def execute(settings: Settings, job_id: uuid.UUID, owner_id: uuid.UUID, worker_id: str) -> str:
+def execute(
+    settings: Settings,
+    job_id: uuid.UUID,
+    owner_id: uuid.UUID,
+    worker_id: str,
+    on_follow_up: Callable[[uuid.UUID], None] | None = None,
+) -> str:
     """Run a job this worker has claimed; returns the job's status afterwards."""
     job = _load(settings, job_id, owner_id, worker_id)
     if job is None:
@@ -181,7 +188,12 @@ def execute(settings: Settings, job_id: uuid.UUID, owner_id: uuid.UUID, worker_i
         return "lost"
     if code is None:
         status = "succeeded"
-        finished = queue.finish(settings, owner_id, job_id, worker_id, status, result=result)
+        then = follow_up(ctx, result or {})
+        finished = queue.finish(
+            settings, owner_id, job_id, worker_id, status, result=result, follow_up=then
+        )
+        if finished and then is not None and on_follow_up is not None:
+            on_follow_up(then.job_id)
     elif (
         code == "cancelled" or ctx.cancel.is_set() or _run_cancelled(settings, owner_id, ctx.run_id)
     ):
@@ -226,10 +238,14 @@ def after_recovery(settings: Settings, job_id: uuid.UUID, owner_id: uuid.UUID, s
 
 
 def run_inline(settings: Settings, job_id: uuid.UUID, owner_id: uuid.UUID) -> None:
-    """JOB_RUNNER=inline: run the request's own job now, retrying immediately."""
+    """JOB_RUNNER=inline: run the request's own job now (and any follow-up it
+    queues), retrying immediately."""
     worker_id = f"inline-{uuid.uuid4().hex[:12]}"
-    for _ in range(settings.job_max_attempts):
-        if not queue.claim_own(settings, owner_id, job_id, worker_id):
-            return
-        if execute(settings, job_id, owner_id, worker_id) != "queued":
-            return
+    pending = [job_id]
+    while pending:
+        current = pending.pop(0)
+        for _ in range(settings.job_max_attempts):
+            if not queue.claim_own(settings, owner_id, current, worker_id):
+                break
+            if execute(settings, current, owner_id, worker_id, pending.append) != "queued":
+                break

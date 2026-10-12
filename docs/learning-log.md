@@ -217,3 +217,25 @@ Short notes on concepts introduced while building, in plain language.
   promise from "here is the result" (200/201). The client then polls the
   resource until the work shows up, which also means a page reload or a
   second tab shows the same truth as the first.
+
+### 6d: bounded automatic improvement
+
+- **Let the model propose, let code decide.** The model only suggests a
+  rewrite; Python checks every claim against confirmed facts and re-scores
+  the result with the same rubric. A change is kept only if it helps, so the
+  model cannot argue its way into a better number.
+- **Score both sides with one ruler.** To find gaps worth fixing, the facts
+  are scored exactly like the draft (same term, negation, and context rules).
+  "The facts would earn more credit here" is then a precise, testable
+  statement, not a guess.
+- **Pareto improvement.** A trade (gain Tableau, lose SQL) can leave the
+  total unchanged or even raise it while making the resume worse for one
+  requirement. Requiring "some gain, no loss" rules that out.
+- **Caps belong in the database.** A counter in code can be bypassed by a
+  retry, a restart, or two workers. `CHECK (attempt BETWEEN 1 AND 2)` plus a
+  unique (run, attempt) pair cannot: the third insert fails whoever tries it.
+  Claim the slot first, then spend the money.
+- **Chain jobs in the same transaction.** Marking the draft job succeeded and
+  queuing the improvement in one commit means there is no moment where one
+  happened and the other was lost.
+

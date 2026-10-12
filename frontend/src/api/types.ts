@@ -271,6 +271,8 @@ export interface RunOut {
   approval?: CurrentApproval | null
   ats?: AtsOverview | null
   jobs?: RunJob[]
+  improvements?: ImprovementAttempt[]
+  improvements_left?: number
   usage: { calls: number; cost_usd: string; input_tokens: number; output_tokens: number }
   created_at: string
   updated_at: string
@@ -452,7 +454,7 @@ export interface AtsOverview {
 
 // --- Durable jobs (mirrors JobStatusOut in backend/app/schemas/tailoring.py) ---
 
-export type JobKind = 'analyze' | 'draft' | 'regenerate' | 'chat' | 'render' | 'ats_check'
+export type JobKind = 'analyze' | 'draft' | 'regenerate' | 'chat' | 'improve' | 'render' | 'ats_check'
 export type JobState = 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled'
 
 export interface RunJob {
@@ -463,6 +465,21 @@ export interface RunJob {
   max_attempts: number
   error_code: string | null
   result: Record<string, unknown> | null
+  created_at: string
+  finished_at: string | null
+}
+
+// --- Automatic improvement (mirrors ImprovementOut; ADR 0008) ---
+
+export interface ImprovementAttempt {
+  attempt: number
+  status: 'running' | 'saved' | 'rejected' | 'failed'
+  outcome: string | null
+  base_version: number
+  new_version: number | null
+  targets: string[]
+  score_before: number | null
+  score_after: number | null
   created_at: string
   finished_at: string | null
 }

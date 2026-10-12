@@ -440,7 +440,7 @@ export function RunPage() {
           <DraftEditor run={run} draft={run.draft} onRun={setRun} canRegenerate={ai?.provider !== 'disabled'} />
         </section>
       )}
-      {run.ats && <AtsPanel run={run} onRun={setRun} />}
+      {run.ats && <AtsPanel run={run} onRun={setRun} canImprove={ai?.provider !== 'disabled'} />}
       {run.draft && <ExportPanel run={run} onRun={setRun} />}
       {run.draft && <FormatPanel key={run.draft.version} run={run} onRun={setRun} />}
       {run.draft && <ChatPanel run={run} onRun={setRun} enabled={ai?.provider === 'openai'} />}

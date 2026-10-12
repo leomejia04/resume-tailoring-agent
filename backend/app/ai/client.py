@@ -22,6 +22,7 @@ from app.ai.schemas import (
     BulletOut,
     ChatPatchOut,
     EntryOut,
+    ImprovePatchOut,
     JobAnalysisOut,
     RequirementOut,
     SkillOut,
@@ -204,6 +205,8 @@ class DemoClient:
             output: BaseModel = self._analysis(payload)
         elif schema is TailoredDraftOut:
             output = self._draft(payload)
+        elif schema is ImprovePatchOut:
+            output = self._improve(payload)
         elif schema is ChatPatchOut:
             output = ChatPatchOut(
                 reply="Demo mode cannot follow written instructions. Use the edit tools instead.",
@@ -269,6 +272,33 @@ class DemoClient:
             skills=skills,
             omitted_evidence_ids=[],
         )
+
+    @staticmethod
+    def _improve(payload: dict[str, Any]) -> ImprovePatchOut:
+        """Adds one supporting fact per entry, word for word (demo mode never rewords)."""
+        current = {e["entry_ref"]: e["bullets"] for e in payload["current_draft"]["entries"]}
+        supports: dict[str, list[str]] = {}
+        for target in payload["targets"]:
+            for alias in target["supporting_fact_ids"]:
+                supports.setdefault(alias, []).append(target["requirement_id"])
+        entries = []
+        for entry in payload["entries"]:
+            bullets = [BulletOut(**b) for b in current.get(entry["ref"], [])]
+            cited = {i for b in bullets for i in b.evidence_ids}
+            fact = next(
+                (f for f in entry["facts"] if f["id"] in supports and f["id"] not in cited), None
+            )
+            if fact is None:
+                continue
+            bullets.append(
+                BulletOut(
+                    text=fact["text"],
+                    evidence_ids=[fact["id"]],
+                    requirement_ids=supports[fact["id"]],
+                )
+            )
+            entries.append(EntryOut(entry_ref=entry["ref"], bullets=bullets))
+        return ImprovePatchOut(entries=entries)
 
 
 def client_for(settings: Settings) -> LLMClient | None:

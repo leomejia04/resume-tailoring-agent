@@ -14,7 +14,9 @@ from app.api.errors import ApiError
 from app.auth.dependencies import user_db
 from app.config import Settings
 from app.db.models import ChatMessage
+from app.jobs.queue import FollowUp
 from app.tailoring import review, runs
+from app.tailoring.improve import improve_draft
 
 if TYPE_CHECKING:
     from app.jobs.runner import JobContext
@@ -72,6 +74,18 @@ def chat(ctx: JobContext) -> dict[str, Any]:
     return {"new_version": version}
 
 
+def improve(ctx: JobContext) -> dict[str, Any]:
+    return improve_draft(
+        ctx.settings,
+        ctx.owner,
+        _model(ctx.settings),
+        ctx.run_id,
+        ctx.job_id,
+        int(ctx.params["expected_version"]),
+        ctx.check_cancelled,
+    )
+
+
 def render(ctx: JobContext) -> dict[str, Any]:
     # Signed uploads never overwrite, so every attempt has its own artifact ID and paths.
     artifact_id = uuid.UUID(ctx.params["artifact_ids"][ctx.attempt - 1])
@@ -103,9 +117,19 @@ HANDLERS: dict[str, Callable[[JobContext], dict[str, Any]]] = {
     "draft": draft,
     "regenerate": regenerate,
     "chat": chat,
+    "improve": improve,
     "render": render,
     "ats_check": ats_check,
 }
+
+
+def follow_up(ctx: JobContext, result: dict[str, Any]) -> FollowUp | None:
+    """Work queued in the same transaction that records this job's success."""
+    if ctx.kind == "draft" and result.get("version") and ctx.settings.auto_improve:
+        # Bounded automatic improvement of the new draft (ADR 0008).
+        return FollowUp(ctx.run_id, "improve", {"expected_version": int(result["version"])})
+    return None
+
 
 _CHAT_FAILURES = {
     "budget_exceeded": "Your daily AI spending limit was reached, so nothing was changed.",
@@ -129,4 +153,4 @@ def on_failure(ctx: JobContext, code: str) -> None:
                     owner_id=ctx.owner_id, run_id=ctx.run_id, role="assistant", content=reply
                 )
             )
-    # regenerate, render, ats_check: the run is unchanged; the UI shows the failed job.
+    # regenerate, improve, render, ats_check: the run is unchanged; the UI shows the job.

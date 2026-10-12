@@ -18,7 +18,13 @@ from sqlalchemy import create_engine, text
 from app.ai.budget import BudgetExceededError, release, reserve
 from app.ai.client import DemoClient, LLMError, LLMResult
 from app.ai.pricing import Usage
-from app.ai.schemas import BulletOut, EntryOut, JobAnalysisOut, TailoredDraftOut
+from app.ai.schemas import (
+    BulletOut,
+    EntryOut,
+    ImprovePatchOut,
+    JobAnalysisOut,
+    TailoredDraftOut,
+)
 from app.auth.dependencies import user_db
 from app.auth.tokens import VerifiedUser
 from app.config import Settings
@@ -225,10 +231,11 @@ class ScriptedClient:
     provider = "openai"
     model = "scripted-test-model"
 
-    def __init__(self, drafts, usage=None, fail_with=None):
+    def __init__(self, drafts, usage=None, fail_with=None, improve=None):
         self.drafts = list(drafts)
         self.usage = usage or Usage(input_tokens=2_000, output_tokens=500)
         self.fail_with = fail_with
+        self.improve = improve  # builds improvement patches; None proposes no change
         self.payloads = []
 
     def parse(self, *, instructions, payload, schema, max_output_tokens, user_hash):
@@ -236,6 +243,9 @@ class ScriptedClient:
         if schema is JobAnalysisOut:
             analysis = DemoClient._analysis(payload)
             return LLMResult(output=analysis, usage=self.usage, latency_ms=5, model=self.model)
+        if schema is ImprovePatchOut:
+            patch = self.improve(payload) if self.improve else ImprovePatchOut(entries=[])
+            return LLMResult(output=patch, usage=self.usage, latency_ms=5, model=self.model)
         if self.fail_with:
             raise LLMError(self.fail_with, Usage(input_tokens=1_000))
         builder = self.drafts.pop(0) if len(self.drafts) > 1 else self.drafts[0]
@@ -298,7 +308,7 @@ def run_with(monkeypatch, app, account, client):
 
 
 def test_one_repair_then_success_and_costs_are_recorded(monkeypatch, base_settings, docx_bytes):
-    app = make_app(base_settings, llm_provider="demo")
+    app = make_app(base_settings, llm_provider="demo", auto_improve=False)
     account = prepared_account(app, docx_bytes)
     client = ScriptedClient([fabricated, faithful])
     body = run_with(monkeypatch, app, account, client).json()
@@ -317,7 +327,7 @@ def test_one_repair_then_success_and_costs_are_recorded(monkeypatch, base_settin
 
 
 def test_unrepaired_fabrications_are_removed_not_shown(monkeypatch, base_settings, docx_bytes):
-    app = make_app(base_settings, llm_provider="demo")
+    app = make_app(base_settings, llm_provider="demo", auto_improve=False)
     account = prepared_account(app, docx_bytes)
     response = run_with(monkeypatch, app, account, ScriptedClient([fabricated]))
     body = response.json()

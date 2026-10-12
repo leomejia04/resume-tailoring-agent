@@ -17,6 +17,7 @@ const SOURCE_LABELS: Record<string, string> = {
   repair: 'Generated and corrected',
   edit: 'Your edit',
   chat: 'Chat revision',
+  improve: 'Automatic improvement',
 }
 
 function bulletTexts(content: DraftContent): Set<string> {

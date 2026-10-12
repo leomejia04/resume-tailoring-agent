@@ -11,3 +11,8 @@ pyjwt[crypto]==2.15.1
 httpx==0.28.1
 openai==3.28.0
 truststore==0.10.4
+# Local embeddings for retrieval (milestone 7, ADR 0010). torch from PyPI is the
+# CPU build on Windows; Linux containers need the CPU wheel index (see ADR).
+sentence-transformers==6.1.0
+torch==2.14.0
+pgvector==0.5.0

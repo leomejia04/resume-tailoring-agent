@@ -358,8 +358,13 @@ def finalize(
     analysis: AnalysisContent,
     checked: _Checked,
     repaired: bool,
+    universe: ProfileContext | None = None,
 ) -> tuple[DraftContent, ValidationReport]:
-    """Drop anything that failed, map aliases to real IDs, and build the report."""
+    """Drop anything that failed, map aliases to real IDs, and build the report.
+
+    ``universe`` is every confirmed fact when the model saw only a retrieved
+    selection: facts it never saw are reported as left out, like unchosen ones.
+    """
     removed: list[str] = []
     entries: list[DraftEntry] = []
     cited_ids: set = set()
@@ -415,7 +420,7 @@ def finalize(
             evidence_id=f.evidence_id,
             reason="failed_validation" if f.evidence_id in failed_ids else "not_selected",
         )
-        for f in context.facts.values()
+        for f in (universe or context).facts.values()
         if f.evidence_id not in cited_ids
     ]
     content = DraftContent(

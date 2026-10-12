@@ -34,6 +34,7 @@ from app.db.models import (
     JobAnalysis,
     JobPosting,
     JobPostingVersion,
+    Retrieval,
     SpendUser,
     TailoringRun,
     UsageEvent,
@@ -44,6 +45,7 @@ from app.schemas.errors import ErrorResponse
 from app.schemas.tailoring import (
     AIStatus,
     ArtifactOut,
+    ContextOut,
     CurrentApproval,
     DraftOut,
     ImprovementOut,
@@ -228,6 +230,23 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
                 filename=approval.filename,
                 approved_at=approval.approved_at,
             )
+        generated = db.execute(
+            select(Retrieval, DraftVersion.version)
+            .join(DraftVersion, DraftVersion.retrieval_id == Retrieval.id)
+            .where(DraftVersion.draft_id == draft.id, Retrieval.owner_id == user.id)
+            .order_by(DraftVersion.version.desc())
+            .limit(1)
+        ).first()
+        context_out = None
+        if generated is not None:
+            used, generated_version = generated
+            context_out = ContextOut(
+                mode=used.mode,  # type: ignore[arg-type]
+                reason=used.reason,
+                facts_selected=used.facts_selected,
+                facts_total=used.facts_total,
+                draft_version=generated_version,
+            )
         draft_out = DraftOut(
             version=version.version,
             content=content,
@@ -237,6 +256,7 @@ def _run_out(db, user: VerifiedUser, run: TailoringRun) -> RunOut:
             prompt_version=version.prompt_version,
             created_at=version.created_at,
             sources=sources,
+            context=context_out,
         )
     master = runs.run_master(db, user, run)
     ats = reports.overview(

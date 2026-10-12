@@ -3,6 +3,7 @@ import { ApiError, editDraft, regenerateEntry } from '../../api/client'
 import { messageOf } from '../../api/errors'
 import type { DraftOut, EditOperation, RunOut } from '../../api/types'
 import { Alert } from '../../components/Alert'
+import { ContextNote } from './ContextNote'
 import { activeDraftJob, draftBusy, failure, jobOf, progress } from './jobs'
 
 interface Props {
@@ -299,6 +300,8 @@ export function DraftEditor({ run, draft, onRun, canRegenerate }: Props) {
           </>
         )}
       </div>
+
+      <ContextNote context={draft.context} />
 
       {omitted.length > 0 && (
         <details className="rounded-lg border border-slate-200 bg-white p-4 text-sm">

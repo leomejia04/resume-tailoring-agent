@@ -25,3 +25,11 @@ dist/
 supabase/signing_keys.json
 supabase/.temp/
 supabase/.branches/
+
+# Local caches and downloaded models (machine-specific, large)
+.cache/
+backend/.models/
+# Machine-specific cache locations (point npm and pip-tools at D:)
+.npmrc
+frontend/.npmrc
+backend/.pip-tools.toml

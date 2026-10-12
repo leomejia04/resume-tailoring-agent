@@ -47,6 +47,8 @@ def normalize(text: str) -> str:
     """Collapse whitespace and unify bullet/quote characters for comparison."""
     text = text.replace("’", "'").replace("–", "-").replace("—", "-")
     text = re.sub(r"[•●▪]", " ", text)
+    # A hyphenated word broken at a line end ("top-" / "performing") is one word.
+    text = re.sub(r"(?<=[A-Za-z])-[ \t]*\n\s*(?=[a-z])", "-", text)
     return re.sub(r"\s+", " ", text).strip()
 
 

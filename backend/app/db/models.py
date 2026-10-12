@@ -57,6 +57,9 @@ RUN_STATUSES = (
 QUESTION_STATUSES = ("open", "confirmed", "declined", "dismissed")
 DRAFT_SOURCES = ("generation", "repair", "edit", "chat", "improve")
 ATS_REPORT_KINDS = ("master_baseline", "draft", "final_pdf")
+# "standard": the shared layout (ADR 0011); "template": the master DOCX edited in place;
+# "reconstructed": the pre-0011 rebuilt layout (kept for existing artifacts).
+LAYOUTS = ("standard", "template", "reconstructed")
 # "stale" is never stored: it is derived when a report no longer matches the run.
 ATS_REPORT_STATUSES = ("pending", "complete", "failed")
 JOB_KINDS = ("analyze", "draft", "regenerate", "chat", "improve", "render", "ats_check")
@@ -214,6 +217,10 @@ class EvidenceVersion(Base):
         ),
         CheckConstraint("version > 0", name="version_positive"),
         CheckConstraint("length(text) > 0", name="text_not_empty"),
+        CheckConstraint(
+            "jsonb_typeof(bold_terms) = 'array' AND jsonb_array_length(bold_terms) <= 30",
+            name="bold_terms_array",
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
@@ -226,6 +233,13 @@ class EvidenceVersion(Base):
     section: Mapped[str | None] = mapped_column(String(100))
     entry: Mapped[str | None] = mapped_column(String(300))
     date_text: Mapped[str | None] = mapped_column(String(100))
+    # Parts of a two-line entry header as the master shows them (protected like
+    # entry and dates: copied from the master, never model-written; ADR 0011).
+    organization: Mapped[str | None] = mapped_column(String(200))
+    location: Mapped[str | None] = mapped_column(String(100))
+    title: Mapped[str | None] = mapped_column(String(200))
+    # Terms the master set in bold inside this fact (e.g. project technologies).
+    bold_terms: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
     metrics: Mapped[list[str]] = mapped_column(JSONB, nullable=False, server_default="[]")
     experience_type: Mapped[str] = mapped_column(String(16), nullable=False)
     suggested_type: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -490,7 +504,7 @@ class Artifact(Base):
         _owner_fk(
             ["draft_version_id", "owner_id"], "draft_versions", "fk_artifacts_draft_version_owner"
         ),
-        CheckConstraint(_in("layout", ("template", "reconstructed")), name="layout"),
+        CheckConstraint(_in("layout", LAYOUTS), name="layout"),
         CheckConstraint("sha256 ~ '^[0-9a-f]{64}$'", name="sha256_hex"),
         Index("ix_artifacts_owner_version", "owner_id", "draft_version_id"),
     )

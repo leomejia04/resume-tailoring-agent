@@ -308,6 +308,7 @@ export interface AIStatus {
 // --- Review, rendering, approval (mirrors backend/app/api/v1/review_routes.py) ---
 
 export interface FormatPreferences {
+  layout: 'standard' | 'master'
   max_bullets_per_entry: number
   project_bullets: number
   bold_project_technologies: boolean
@@ -321,7 +322,7 @@ export interface ArtifactOut {
   draft_version: number
   sha256: string
   page_count: number
-  layout: 'template' | 'reconstructed'
+  layout: 'standard' | 'template' | 'reconstructed'
   passed: boolean
   checks: {
     page_count: number

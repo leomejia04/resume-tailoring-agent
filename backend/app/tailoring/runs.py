@@ -476,7 +476,7 @@ def answer_question(
                     "validation_error",
                     f"Describe what you did with {question.term}, mentioning it by name.",
                 )
-            section = entry = date_text = None
+            section = entry = date_text = organization = location = title = None
             if entry_evidence_id is not None:
                 row = db.execute(
                     select(EvidenceRecord, EvidenceVersion)
@@ -494,6 +494,7 @@ def answer_question(
                 if row is None or row[1].verification_status != "verified":
                     raise _not_found("That experience entry")
                 section, entry, date_text = row[1].section, row[1].entry, row[1].date_text
+                organization, location, title = row[1].organization, row[1].location, row[1].title
             position = (
                 db.scalar(
                     select(func.count()).where(
@@ -522,6 +523,9 @@ def answer_question(
                     section=section,
                     entry=entry,
                     date_text=date_text,
+                    organization=organization,
+                    location=location,
+                    title=title,
                     metrics=find_metrics(description),
                     experience_type=experience_type or "other",
                     suggested_type=experience_type or "other",

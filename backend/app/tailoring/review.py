@@ -53,6 +53,7 @@ from app.render.filename import download_filename
 from app.render.format import FormatPreferences
 from app.render.pipeline import render_draft
 from app.render.reconstructed_docx import ExtraEntry
+from app.render.standard_docx import EntryDetail
 from app.render.template_docx import FactLocation
 from app.schemas.ats import ShownStatus
 from app.schemas.errors import FieldError
@@ -798,18 +799,31 @@ def render_version(
         )
         for record, ev in rows
     }
-    extras = [
-        ExtraEntry(section="education", entry=ev.entry or ev.text, date_text=ev.date_text)
-        for record, ev in rows
-        if ev.verification_status == "verified" and ev.section == "education"
-    ]
-    master_bytes, header = None, []
+    verified = [(record, ev) for record, ev in rows if ev.verification_status == "verified"]
+    extras = list(
+        dict.fromkeys(
+            ExtraEntry(section="education", entry=ev.entry or ev.text, date_text=ev.date_text)
+            for _, ev in verified
+            if ev.section == "education"
+        )
+    )
+    # Standard layout inputs (ADR 0011): header parts and emphasis from the master.
+    details = {
+        (ev.section, ev.entry): EntryDetail(ev.organization, ev.location, ev.title)
+        for _, ev in verified
+        if ev.organization
+    }
+    bold_terms = {record.id: list(ev.bold_terms) for record, ev in verified if ev.bold_terms}
+    project_terms = list(
+        dict.fromkeys(t for _, ev in verified if ev.section == "projects" for t in ev.bold_terms)
+    )
+    master_bytes, header, header_links = None, [], []
     if master_info and master_grant:
         master_bytes = SignedObject(settings, master_grant.url).download()
         extraction = (
             extract_docx(master_bytes) if master_info[1] == "docx" else extract_pdf(master_bytes)
         )
-        header = extraction.header_lines
+        header, header_links = extraction.header_lines, extraction.header_links
     outcome = render_draft(
         master=master_bytes,
         master_kind=master_info[1] if master_info else None,
@@ -818,6 +832,10 @@ def render_version(
         facts=facts,
         prefs=content.format,
         extras=extras,
+        header_links=header_links,
+        details=details,
+        bold_terms=bold_terms,
+        project_terms=project_terms,
     )
 
     sha = hashlib.sha256(outcome.pdf).hexdigest()

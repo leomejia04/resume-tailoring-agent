@@ -1,7 +1,7 @@
 """Render a draft to the exact PDF the user will approve, and check it.
 
-Template-aware rendering is used for DOCX masters when the layout allows it;
-otherwise the reconstructed layout is used and labeled. One page is reached
+Every resume uses the standard layout (ADR 0011) unless the user chose to keep
+a DOCX master's own design, which is edited in place when its layout allows it. One page is reached
 only by dropping the least relevant bullets (bounded rounds), never by
 shrinking fonts or margins. The final PDF is inspected for page count,
 clipping, selectable text, contact details, dates, and reading order.
@@ -12,7 +12,7 @@ from __future__ import annotations
 import tempfile
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Literal
 
@@ -20,9 +20,11 @@ from pydantic import BaseModel, Field
 
 from app.documents.convert import docx_to_pdf
 from app.documents.docx_edit import UnsupportedLayoutError
+from app.documents.extract import HeaderLink
 from app.documents.pdf_inspect import inspect_pdf, normalize
 from app.render.format import FormatPreferences, is_entry_line
-from app.render.reconstructed_docx import ExtraEntry, render_reconstructed
+from app.render.reconstructed_docx import ExtraEntry
+from app.render.standard_docx import EntryDetail, render_standard
 from app.render.template_docx import FactLocation, render_template
 from app.tailoring.models import DraftContent
 
@@ -33,7 +35,7 @@ _CONVERSIONS = threading.BoundedSemaphore(2)
 
 class RenderChecks(BaseModel):
     passed: bool
-    layout: Literal["template", "reconstructed"]
+    layout: Literal["standard", "template", "reconstructed"]
     page_count: int
     page_size_pt: tuple[float, float]
     searchable: bool
@@ -63,10 +65,20 @@ def _convert(docx: bytes) -> bytes:
         return docx_to_pdf(source, Path(work) / "draft.pdf").read_bytes()
 
 
-def _phrase_groups(header_lines: list[str], content: DraftContent) -> list[list[str]]:
+def _phrase_groups(
+    header_lines: list[str],
+    content: DraftContent,
+    details: Mapping[tuple[str | None, str | None], EntryDetail] | None = None,
+) -> list[list[str]]:
     groups = [[line for line in header_lines[:2] if line]]
     for entry in content.entries:
-        group = [p for p in (entry.entry, entry.date_text) if p]
+        detail = (details or {}).get((entry.section, entry.entry))
+        if detail and detail.organization:
+            # Two-line header: organization, location, title, dates in reading order.
+            parts = (detail.organization, detail.location, detail.title, entry.date_text)
+        else:
+            parts = (entry.entry, entry.date_text)
+        group = [p for p in parts if p]
         group += [b.text for b in entry.bullets if not is_entry_line(b.text, entry.entry)]
         groups.append(group)
     groups.append([s.text for s in content.skills])
@@ -79,13 +91,15 @@ def _check_phrases(text: str, groups: list[list[str]]) -> tuple[list[str], list[
     for group in groups:
         cursor = 0
         for phrase in group:
-            position = haystack.find(normalize(phrase))
-            if position == -1:
-                missing.append(phrase[:80])
-            elif position < cursor:
+            needle = normalize(phrase)
+            # Search forward first: the same city or date may appear in several entries.
+            position = haystack.find(needle, cursor)
+            if position != -1:
+                cursor = position
+            elif needle in haystack:
                 out_of_order.append(phrase[:80])
             else:
-                cursor = position
+                missing.append(phrase[:80])
     return missing, out_of_order
 
 
@@ -132,27 +146,41 @@ def render_draft(
     facts: dict[uuid.UUID, FactLocation],
     prefs: FormatPreferences,
     extras: list[ExtraEntry],
+    header_links: Sequence[HeaderLink] = (),
+    details: Mapping[tuple[str | None, str | None], EntryDetail] | None = None,
+    bold_terms: Mapping[uuid.UUID, Sequence[str]] | None = None,
+    project_terms: Sequence[str] = (),
     convert: Callable[[bytes], bytes] = _convert,
 ) -> RenderOutcome:
     notes: list[str] = []
-    layout: Literal["template", "reconstructed"] = "reconstructed"
-    if master is not None and master_kind == "docx":
+    layout: Literal["standard", "template"] = "standard"
+    if prefs.layout == "master" and master is not None and master_kind == "docx":
         try:
             render_template(master, content, facts, prefs)
             layout = "template"
         except UnsupportedLayoutError as exc:
             notes.append(
                 f"Your master's layout could not be edited safely ({exc}); "
-                "a reconstructed layout was used instead. Review it before approving."
+                "the standard layout was used instead."
             )
-    elif master_kind == "pdf":
-        notes.append("PDF masters cannot be edited in place; a reconstructed layout was used.")
+    elif prefs.layout == "master":
+        notes.append("Only Word masters can keep their own design; the standard layout was used.")
 
     def build(draft: DraftContent) -> tuple[bytes, list[str]]:
         if layout == "template" and master is not None:
             result = render_template(master, draft, facts, prefs)
             return result.docx, result.header_lines
-        return render_reconstructed(header_lines, draft, prefs, extras), header_lines
+        docx = render_standard(
+            header_lines=header_lines,
+            header_links=header_links,
+            content=draft,
+            prefs=prefs,
+            extras=extras,
+            details=details or {},
+            bold_terms=bold_terms or {},
+            project_terms=project_terms,
+        )
+        return docx, header_lines
 
     current, capped = apply_caps(content, prefs)
     if capped:
@@ -175,7 +203,9 @@ def render_draft(
                 "The resume does not fit on one page even after removing "
                 f"{len(dropped)} lower-priority bullets. Remove or shorten content and try again."
             )
-        missing, out_of_order = _check_phrases(report.text, _phrase_groups(header, current))
+        missing, out_of_order = _check_phrases(
+            report.text, _phrase_groups(header, current, details if layout == "standard" else None)
+        )
         checks = RenderChecks(
             passed=(
                 report.page_count == 1

@@ -3,7 +3,7 @@
 A hosted, multi-user application for creating truthful, tailored, one-page PDF
 resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md).
 
-**Current state:** milestones 1-7 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 added saved ATS match estimates required for approval (6a-6b), a durable background worker with bounded retries and crash recovery (6c), up to two automatic, fact-checked improvement attempts per run (6d), and a private manual application tracker (6e). Milestone 7 added measured retrieval (ADR 0010): local embeddings, pgvector hybrid search, and a labeled evaluation; live drafts showed the full profile works best for normal-sized profiles, so retrieval is used only when a profile is too large to send whole.
+**Current state:** milestones 1-7 are complete (milestone 4's live `gpt-5.6-luna` smoke test passed on fictional data on 2026-10-11). Milestone 6 added saved ATS match estimates required for approval (6a-6b), a durable background worker with bounded retries and crash recovery (6c), up to two automatic, fact-checked improvement attempts per run (6d), and a private manual application tracker (6e). Milestone 7 added measured retrieval (ADR 0010): local embeddings, pgvector hybrid search, and a labeled evaluation; live drafts showed the full profile works best for normal-sized profiles, so retrieval is used only when a profile is too large to send whole. Every resume uses one standard layout measured from the owner's reference resume (ADR 0011); keeping a Word master's own design is an opt-in setting.
 
 - Document proof: a fictional master DOCX is edited in a copy with formatting
   preserved, rendered to PDF in a sandboxed LibreOffice container, and inspected.
@@ -42,7 +42,7 @@ resumes. The full specification and build progress live in [CLAUDE.md](CLAUDE.md
 ```
 backend/app/ai/           model clients (OpenAI, demo), prompts, pricing, budgets
 backend/app/tailoring/    job analysis, gaps/questions, drafting, validation, review/approval
-backend/app/render/       template-aware and reconstructed DOCX rendering, one-page fitting
+backend/app/render/       standard layout (default, ADR 0011), optional in-place DOCX editing, one-page fitting
 backend/app/ats/          ATS match estimate: matching, passages, rubric scoring, improvement rules (ADR 0006, 0008)
 backend/app/retrieval/    local embeddings, fact index, exact/full-text/semantic search, selection (ADR 0010)
 backend/app/api/          FastAPI routes (/api/v1), error envelope, middleware

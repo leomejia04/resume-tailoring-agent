@@ -11,6 +11,7 @@ import { ChatPanel, FormatPanel } from './RevisePanel'
 import { VersionHistory } from './VersionHistory'
 
 const FORMAT = {
+  layout: 'standard' as const,
   max_bullets_per_entry: 4,
   project_bullets: 3,
   bold_project_technologies: true,

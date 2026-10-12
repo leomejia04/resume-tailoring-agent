@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -17,6 +19,9 @@ def is_entry_line(text: str, entry: str | None) -> bool:
 class FormatPreferences(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # "standard": the shared layout (ADR 0011); "master": edit a DOCX master in
+    # place, keeping its own design (PDF masters always use the standard layout).
+    layout: Literal["standard", "master"] = "standard"
     max_bullets_per_entry: int = Field(default=4, ge=1, le=8)
     project_bullets: int = Field(default=3, ge=1, le=6)
     bold_project_technologies: bool = True

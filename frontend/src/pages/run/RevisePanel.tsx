@@ -4,8 +4,10 @@ import { messageOf } from '../../api/errors'
 import type { ChatMessage, FormatPreferences, RunOut } from '../../api/types'
 import { Alert } from '../../components/Alert'
 import { isActive, jobOf, progress } from './jobs'
+import { LayoutChoice } from './LayoutChoice'
 
 const DEFAULT_FORMAT: FormatPreferences = {
+  layout: 'standard',
   max_bullets_per_entry: 4,
   project_bullets: 3,
   bold_project_technologies: true,
@@ -141,6 +143,7 @@ export function FormatPanel({ run, onRun }: { run: RunOut; onRun: (run: RunOut) 
           Formatting
         </summary>
         <form onSubmit={apply} className="mt-3 space-y-3 text-sm">
+          <LayoutChoice value={format.layout} onChange={(layout) => setFormat({ ...format, layout })} />
           <div className="flex flex-wrap gap-4">
             <div>
               <label htmlFor={ids.bullets} className="block font-medium">
@@ -186,7 +189,7 @@ export function FormatPanel({ run, onRun }: { run: RunOut; onRun: (run: RunOut) 
               checked={format.show_headline}
               onChange={(e) => setFormat({ ...format, show_headline: e.target.checked })}
             />
-            Show the headline on the PDF (rebuilt layouts only)
+            Show the headline on the PDF (standard layout only)
           </label>
           {entries.length > 0 && (
             <fieldset>

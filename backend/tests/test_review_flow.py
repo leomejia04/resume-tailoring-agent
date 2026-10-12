@@ -75,7 +75,7 @@ def test_render_preview_approve_download(demo_app, docx_bytes):
     rendered = render(account)
     artifact = rendered["artifact"]
     assert artifact["passed"] is True, artifact["checks"]
-    assert artifact["layout"] == "template" and artifact["page_count"] == 1
+    assert artifact["layout"] == "standard" and artifact["page_count"] == 1  # ADR 0011
     assert artifact["filename"] == "JordanExample_Data_Analyst_Fictional_Retail_Co_CV.pdf"
     assert artifact["draft_version"] == rendered["draft"]["version"]
 
@@ -376,7 +376,22 @@ def test_long_resume_is_fit_to_one_page_by_dropping_bullets(demo_app, tmp_path):
     assert artifact["passed"] is True, artifact["checks"]
 
 
-def test_pdf_master_uses_labeled_reconstructed_layout(demo_app, docx_bytes, tmp_path):
+def test_keeping_the_word_masters_design_edits_it_in_place(demo_app, docx_bytes):
+    account, run = drafted(demo_app, docx_bytes)
+    fmt = {**run["draft"]["content"]["format"], "layout": "master"}
+    edited = account.client.post(
+        f"{account.run_url}/draft/edits",
+        json={
+            "expected_version": run["draft"]["version"],
+            "operations": [{"op": "update_format", "format": fmt}],
+        },
+    )
+    assert edited.status_code == 200, edited.text
+    artifact = render(account)["artifact"]
+    assert artifact["layout"] == "template" and artifact["passed"] is True, artifact["checks"]
+
+
+def test_pdf_master_uses_the_standard_layout(demo_app, docx_bytes, tmp_path):
     from app.documents.convert import docx_to_pdf
 
     docx_path = tmp_path / "m.docx"
@@ -403,8 +418,7 @@ def test_pdf_master_uses_labeled_reconstructed_layout(demo_app, docx_bytes, tmp_
     account.client.post(f"/api/v1/runs/{run['id']}/draft")
     account.run_url = f"/api/v1/runs/{run['id']}"  # type: ignore[attr-defined]
     artifact = render(account)["artifact"]
-    assert artifact["layout"] == "reconstructed"
-    assert any("reconstructed" in note for note in artifact["checks"]["notes"])
+    assert artifact["layout"] == "standard" and not artifact["checks"]["notes"]
     assert artifact["passed"] is True and artifact["page_count"] == 1
 
 

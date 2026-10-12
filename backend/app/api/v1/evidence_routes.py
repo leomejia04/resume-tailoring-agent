@@ -145,6 +145,11 @@ def add_evidence_version(
             section=current.section,
             entry=current.entry,
             date_text=current.date_text,
+            organization=current.organization,
+            location=current.location,
+            title=current.title,
+            # Emphasis survives only for terms still present in the new wording.
+            bold_terms=[t for t in current.bold_terms if t in text],
             metrics=find_metrics(text),
             experience_type=body.experience_type,
             suggested_type=current.suggested_type,

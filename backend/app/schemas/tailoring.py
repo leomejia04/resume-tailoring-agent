@@ -94,7 +94,7 @@ class ArtifactOut(BaseModel):
     draft_version: int
     sha256: str
     page_count: int
-    layout: Literal["template", "reconstructed"]
+    layout: Literal["standard", "template", "reconstructed"]
     passed: bool
     checks: dict
     filename: str

@@ -3,6 +3,7 @@ import { getPreferences, rememberPreferences } from '../api/client'
 import { messageOf } from '../api/errors'
 import type { FormatPreferences } from '../api/types'
 import { Alert } from '../components/Alert'
+import { LayoutChoice } from './run/LayoutChoice'
 
 export function SettingsPage() {
   const [prefs, setPrefs] = useState<FormatPreferences | null>(null)
@@ -60,6 +61,7 @@ export function SettingsPage() {
       ) : (
         <form onSubmit={save} className="space-y-4 rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold">Formatting defaults</h2>
+          <LayoutChoice value={prefs.layout} onChange={(layout) => setPrefs({ ...prefs, layout })} />
           <div className="flex flex-wrap gap-4">
             <div>
               <label htmlFor={ids.bullets} className="block text-sm font-medium">
@@ -104,7 +106,7 @@ export function SettingsPage() {
               checked={prefs.show_headline}
               onChange={(e) => setPrefs({ ...prefs, show_headline: e.target.checked })}
             />
-            Show a headline on rebuilt layouts
+            Show a headline (standard layout only)
           </label>
           <button type="submit" aria-disabled={busy} className="rounded-md bg-indigo-700 px-4 py-2 font-medium text-white aria-disabled:opacity-60">
             {busy ? 'Saving…' : 'Save defaults'}

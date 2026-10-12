@@ -16,6 +16,8 @@ _ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
 _MODEL_DIR = Path(__file__).resolve().parents[1] / ".models" / "all-MiniLM-L6-v2"
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "[::1]"}
 _DEV_ORIGINS = ["http://127.0.0.1:5173", "http://localhost:5173"]
+# Every secret placeholder in .env.example contains this ("replace-me", "replace-with-...").
+_PLACEHOLDER = "replace-"
 
 OriginList = Annotated[list[str], NoDecode]
 
@@ -129,6 +131,14 @@ class Settings(BaseSettings):
     embedding_model_dir: Path = _MODEL_DIR
     embedding_threads: int = Field(default=2, ge=1, le=8)
 
+    # --- Hosting (milestone 8, ADR 0012). The built frontend (`npm run build`
+    # output) served by this app, so pages and /api share one origin. Unset in
+    # development, where the Vite server proxies /api instead.
+    frontend_dist: Path | None = None
+    # The worker touches this file every loop; `python -m app.worker --check`
+    # (the container health check) fails when it goes stale.
+    worker_heartbeat_file: Path | None = None
+
     @field_validator("cors_allowed_origins", "trusted_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
@@ -149,6 +159,14 @@ class Settings(BaseSettings):
             raise ValueError("SUPABASE_URL must be an http(s) base URL")
         return url.rstrip("/")
 
+    @field_validator("frontend_dist")
+    @classmethod
+    def _validate_frontend_dist(cls, dist: Path | None) -> Path | None:
+        # Fail at startup, not on the first page request (middleware is built lazily).
+        if dist is not None and not (dist / "index.html").is_file():
+            raise ValueError("FRONTEND_DIST must be a frontend build folder with index.html")
+        return dist
+
     @model_validator(mode="after")
     def _production_rules(self) -> Settings:
         if self.app_env == "production":
@@ -165,6 +183,17 @@ class Settings(BaseSettings):
                 raise ValueError("the demo AI provider is not allowed in production")
             if self.job_runner != "worker":
                 raise ValueError("production runs jobs in the worker (JOB_RUNNER=worker)")
+            required = {
+                "DATABASE_URL": self.database_url,
+                "SUPABASE_ANON_KEY": self.supabase_anon_key,
+            }
+            for name, secret in required.items():
+                if secret is None:
+                    raise ValueError(f"production requires {name}")
+            secrets = {**required, "OPENAI_API_KEY": self.openai_api_key}
+            for name, secret in secrets.items():
+                if secret is not None and _PLACEHOLDER in secret.get_secret_value():
+                    raise ValueError(f"production {name} still holds the .env.example placeholder")
         if self.llm_provider == "openai" and self.openai_api_key is None:
             raise ValueError("LLM_PROVIDER=openai requires OPENAI_API_KEY")
         return self

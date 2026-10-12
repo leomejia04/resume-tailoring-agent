@@ -17,6 +17,7 @@ from app.api.middleware import BodySizeLimitMiddleware, RequestContextMiddleware
 from app.api.v1.routes import router as v1_router
 from app.auth.csrf import CSRFMiddleware
 from app.config import Settings, get_settings
+from app.web import FrontendMiddleware
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -38,6 +39,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(v1_router, prefix="/api/v1")
 
     # Starlette runs the last-added middleware first (outermost).
+    if settings.frontend_dist is not None:
+        # Innermost: pages still get request IDs and security headers.
+        app.add_middleware(FrontendMiddleware, dist=settings.frontend_dist)
     # Multipart framing adds a little overhead on top of the file itself.
     upload_limit = settings.max_upload_bytes + 64 * 1024
     app.add_middleware(

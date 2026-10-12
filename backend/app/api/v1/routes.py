@@ -1,13 +1,13 @@
 """Version 1 API routes.
 
-Everything except /health and the /auth routes requires a signed-in user.
+Everything except /health, /health/ready and the /auth routes requires a signed-in user.
 """
 
 from __future__ import annotations
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response
 from pydantic import BaseModel
 
 from app import __version__
@@ -20,8 +20,10 @@ from app.api.v1 import (
     tailoring_routes,
     tracker_routes,
 )
-from app.auth.dependencies import current_user
+from app.auth.dependencies import current_user, get_app_settings
 from app.auth.tokens import VerifiedUser
+from app.config import Settings
+from app.health import ReadyResponse, readiness
 from app.schemas.errors import ErrorResponse
 from app.schemas.jobs import (
     DetectedSection,
@@ -53,6 +55,20 @@ class HealthResponse(BaseModel):
 def health() -> HealthResponse:
     """Liveness check used by the frontend to show whether the API is reachable."""
     return HealthResponse(status="ok", version=__version__)
+
+
+@router.get(
+    "/health/ready",
+    response_model=ReadyResponse,
+    responses={503: {"model": ReadyResponse, "description": "Not ready to serve requests"}},
+    tags=["system"],
+)
+def ready(response: Response, settings: Settings = Depends(get_app_settings)) -> ReadyResponse:
+    """Readiness check for the host: database reachable and schema migrated."""
+    result = readiness(settings)
+    if result.status != "ok":
+        response.status_code = 503
+    return result
 
 
 @router.post("/jobs/preview", response_model=JobInputPreview, responses=_ERRORS, tags=["jobs"])

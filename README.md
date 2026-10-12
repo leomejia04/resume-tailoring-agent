@@ -312,6 +312,13 @@ Environment variables (see [.env.example](.env.example)):
 | `EMBEDDING_MODEL_DIR` | `backend/.models/all-MiniLM-L6-v2` | Where the pinned model snapshot lives |
 | `EMBEDDING_THREADS` | `2` | CPU threads for embeddings |
 | `PRICE_*_PER_MTOK` | official rates | Used for cost accounting |
+| `FRONTEND_DIST` | (unset) | Built frontend folder (`frontend/dist`) the API serves, so pages and `/api` share one origin (hosting, ADR 0012); must contain `index.html` |
+| `WORKER_HEARTBEAT_FILE` | (unset) | File the worker refreshes while healthy; `python -m app.worker --check` exits 1 when it is older than 90 s |
+| `FORWARDED_ALLOW_IPS` | `127.0.0.1` | Read by uvicorn: proxy addresses whose `X-Forwarded-For` is trusted. Set it to the host's proxy so rate limits see real client addresses, never `*` on a directly exposed server |
+
+Health checks: `GET /api/v1/health` (liveness: the process answers) and `GET /api/v1/health/ready` (readiness: database reachable and schema at the newest migration this build knows; 503 otherwise, cached 5 s).
+
+To try production-style serving locally: `npm run build` in `frontend/`, then start the `site-same-origin` entry of `.claude/launch.json` (port 8002, demo AI) and open http://127.0.0.1:8002.
 
 ## Updating dependencies
 

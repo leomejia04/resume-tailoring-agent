@@ -23,6 +23,9 @@ PRODUCTION = {
     "app_env": "production",
     "trusted_origins": "https://app.example.com",
     "supabase_url": "https://project.supabase.co",
+    # Fictional; nothing in these tests connects to them.
+    "supabase_anon_key": "fictional-publishable-key",
+    "database_url": "postgresql+psycopg://app_backend:fictional@db.example.invalid:5432/postgres",
 }
 
 

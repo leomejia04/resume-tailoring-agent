@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.api.errors import error_body
+from app.web import is_api_path
 
 logger = logging.getLogger("app.request")
 
@@ -29,6 +30,14 @@ _SECURITY_HEADERS = {
 }
 # The API serves JSON only; nothing it returns should run scripts or be framed.
 _API_CSP = "default-src 'none'; frame-ancestors 'none'; base-uri 'none'"
+# The built frontend (app/web.py): scripts, styles, images and API calls from
+# this origin only; no inline scripts, plugins, framing, or foreign form posts.
+# React's style={{...}} sets styles through the DOM, which style-src allows.
+_PAGE_CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+    "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; "
+    "form-action 'self'; frame-ancestors 'none'"
+)
 # Interactive docs (development only) load Swagger UI from its CDN.
 _DOCS_PATHS = ("/api/docs", "/api/openapi.json")
 
@@ -47,7 +56,9 @@ class RequestContextMiddleware:
 
     def _headers_for(self, path: str, request_id: str) -> dict[str, str]:
         headers = {"X-Request-ID": request_id, **_SECURITY_HEADERS}
-        if not path.startswith(_DOCS_PATHS):
+        if not is_api_path(path):
+            headers["Content-Security-Policy"] = _PAGE_CSP
+        elif not path.startswith(_DOCS_PATHS):
             headers["Content-Security-Policy"] = _API_CSP
         if self.hsts:
             headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"

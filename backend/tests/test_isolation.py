@@ -437,7 +437,10 @@ def test_cross_owner_references_are_impossible(runtime_engine, alice, bob):
         "DELETE FROM app.evidence_versions",
         "DELETE FROM app.master_versions",
         "UPDATE app.evidence_records SET master_version_id = gen_random_uuid()",
-        "SELECT * FROM app.alembic_version",
+        # Readable since 0010 (readiness check; no user data), never writable.
+        "UPDATE app.alembic_version SET version_num = '0001'",
+        "DELETE FROM app.alembic_version",
+        "INSERT INTO app.alembic_version VALUES ('9999')",
         "SET ROLE authenticated",
         "SET ROLE service_role",
         "CREATE TABLE app.sneaky (id int)",

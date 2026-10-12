@@ -5,7 +5,9 @@ Claims queued jobs and runs them as their owners, with a few threads
 healthy: jobs whose worker died are requeued (or failed once out of
 attempts) and expired budget reservations are returned. Stop with Ctrl+C or
 SIGTERM: running jobs finish first; anything cut off is recovered by the
-next worker when its lease expires.
+next worker when its lease expires. With WORKER_HEARTBEAT_FILE set, each
+maintenance pass also refreshes that file while all job threads are alive;
+``python -m app.worker --check`` exits non-zero when it is stale.
 """
 
 from __future__ import annotations
@@ -14,13 +16,17 @@ import logging
 import os
 import signal
 import socket
+import sys
 import threading
+import time
 
 from app.config import Settings, get_settings
 from app.jobs import queue, runner
 
 logger = logging.getLogger("app.worker")
 MAINTENANCE_SECONDS = 15
+# Several missed beats, allowing for a slow maintenance pass (DB timeouts ~10 s).
+HEARTBEAT_MAX_AGE_SECONDS = 90
 
 
 def run_once(settings: Settings, worker_id: str) -> bool:
@@ -52,6 +58,31 @@ def drain(settings: Settings, worker_id: str = "drain", limit: int = 100) -> int
     return done
 
 
+def beat(settings: Settings, threads: list[threading.Thread]) -> None:
+    """Record that the main loop and every job thread are alive (container health check)."""
+    path = settings.worker_heartbeat_file
+    if path is None or not all(thread.is_alive() for thread in threads):
+        return
+    try:
+        temporary = path.with_name(path.name + ".tmp")
+        temporary.write_text(f"{time.time():.0f}\n", encoding="utf-8")
+        temporary.replace(path)  # atomic, so a check never reads half a number
+    except OSError as exc:
+        logger.error("heartbeat write failed error=%s", type(exc).__name__)
+
+
+def check_heartbeat(settings: Settings, now: float | None = None) -> bool:
+    """True when the heartbeat is fresh; ``python -m app.worker --check`` exits on it."""
+    path = settings.worker_heartbeat_file
+    if path is None:
+        return False
+    try:
+        written = float(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return False
+    return ((now if now is not None else time.time()) - written) < HEARTBEAT_MAX_AGE_SECONDS
+
+
 def serve(settings: Settings, stop: threading.Event) -> None:
     base = f"{socket.gethostname()}-{os.getpid()}"
 
@@ -77,13 +108,19 @@ def serve(settings: Settings, stop: threading.Event) -> None:
             maintain(settings)
         except Exception as exc:
             logger.error("maintenance error error=%s", type(exc).__name__)
+        beat(settings, threads)
         if stop.wait(MAINTENANCE_SECONDS):
             break
     for thread in threads:
         thread.join()
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    args = sys.argv[1:] if argv is None else argv
+    if args == ["--check"]:
+        raise SystemExit(0 if check_heartbeat(get_settings()) else 1)
+    if args:
+        raise SystemExit("usage: python -m app.worker [--check]")
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
     # Request logs would include signed URLs (capabilities); never log them.
     for name in ("httpx", "httpx2", "openai"):

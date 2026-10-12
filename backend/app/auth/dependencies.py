@@ -33,7 +33,7 @@ def current_user(request: Request, settings: Settings = Depends(get_app_settings
     if not token:
         raise ApiError(401, "unauthenticated", "Please sign in.")
     try:
-        return verifier_for(settings.jwt_issuer).verify(token)
+        return verifier_for(settings.jwt_issuer, settings.auth_url).verify(token)
     except TokenError as exc:
         if exc.reason == "expired":
             raise ApiError(401, "session_expired", "Your session has expired.") from exc

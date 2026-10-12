@@ -51,7 +51,7 @@ def migration_state(current: str | None) -> CheckState:
     if current is None or current in known:
         return "behind"
     # A revision this image has never seen comes from a newer release whose
-    # migrations ran first (deploy order in docs/deployment.md). Migrations stay
+    # migrations ran first (migrate, then start the new release). Migrations stay
     # compatible with the previous release, so the old instances keep serving.
     return "ok"
 

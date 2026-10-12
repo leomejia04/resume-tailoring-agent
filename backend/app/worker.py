@@ -7,7 +7,9 @@ attempts) and expired budget reservations are returned. Stop with Ctrl+C or
 SIGTERM: running jobs finish first; anything cut off is recovered by the
 next worker when its lease expires. With WORKER_HEARTBEAT_FILE set, each
 maintenance pass also refreshes that file while all job threads are alive;
-``python -m app.worker --check`` exits non-zero when it is stale.
+``python -m app.worker --check`` exits non-zero when it is stale. If a job
+thread dies anyway, the worker stops and exits with status 1 so the host's
+restart policy replaces it (hosts without command health checks).
 """
 
 from __future__ import annotations
@@ -83,7 +85,8 @@ def check_heartbeat(settings: Settings, now: float | None = None) -> bool:
     return ((now if now is not None else time.time()) - written) < HEARTBEAT_MAX_AGE_SECONDS
 
 
-def serve(settings: Settings, stop: threading.Event) -> None:
+def serve(settings: Settings, stop: threading.Event) -> bool:
+    """Run until ``stop``; False when a job thread died (the process should exit non-zero)."""
     base = f"{socket.gethostname()}-{os.getpid()}"
 
     def loop(index: int) -> None:
@@ -109,10 +112,19 @@ def serve(settings: Settings, stop: threading.Event) -> None:
         except Exception as exc:
             logger.error("maintenance error error=%s", type(exc).__name__)
         beat(settings, threads)
+        if not stop.is_set() and not all(thread.is_alive() for thread in threads):
+            # Hosts without command health checks restart a worker that exits;
+            # its claimed jobs are recovered once their leases expire.
+            logger.error("a job thread died; stopping so the host restarts the worker")
+            stop.set()
+            healthy = False
+            break
         if stop.wait(MAINTENANCE_SECONDS):
+            healthy = True
             break
     for thread in threads:
         thread.join()
+    return healthy
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -137,8 +149,10 @@ def main(argv: list[str] | None = None) -> None:
         settings.worker_concurrency,
         settings.job_lease_seconds,
     )
-    serve(settings, stop)
+    healthy = serve(settings, stop)
     logger.info("worker stopped")
+    if not healthy:
+        raise SystemExit(1)
 
 
 if __name__ == "__main__":

@@ -21,6 +21,30 @@
       "port": 8000
     },
     {
+      "name": "backend-live",
+      "runtimeExecutable": "backend/.venv/Scripts/python.exe",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "--app-dir",
+        "backend",
+        "app.main:create_app",
+        "--factory",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8000",
+        "--no-server-header",
+        "--no-access-log"
+      ],
+      "env": {
+        "LLM_PROVIDER": "openai",
+        "USER_DAILY_BUDGET_USD": "1.00",
+        "APP_DAILY_BUDGET_USD": "1.00"
+      },
+      "port": 8000
+    },
+    {
       "name": "frontend",
       "runtimeExecutable": "node",
       "runtimeArgs": [

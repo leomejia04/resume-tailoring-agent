@@ -4,6 +4,7 @@ import { messageOf } from '../api/errors'
 import type { FormatPreferences } from '../api/types'
 import { Alert } from '../components/Alert'
 import { LayoutChoice } from './run/LayoutChoice'
+import { DeleteAccount } from './settings/DeleteAccount'
 
 export function SettingsPage() {
   const [prefs, setPrefs] = useState<FormatPreferences | null>(null)
@@ -113,10 +114,7 @@ export function SettingsPage() {
           </button>
         </form>
       )}
-      <section className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-700">
-        <h2 className="text-lg font-semibold text-slate-900">Your data</h2>
-        <p className="mt-2">Deleting your account and all of your files is not available yet; it is planned for a later step.</p>
-      </section>
+      <DeleteAccount />
     </div>
   )
 }

@@ -1,7 +1,10 @@
 import { createContext, useContext } from 'react'
 import type { SessionResponse, User } from '../api/types'
 
-export type AuthState = { status: 'loading' } | { status: 'signed_out' } | { status: 'signed_in'; user: User }
+export type AuthState =
+  | { status: 'loading' }
+  | { status: 'signed_out'; reason?: 'account_deleted' }
+  | { status: 'signed_in'; user: User }
 
 export interface AuthValue {
   state: AuthState
@@ -10,6 +13,8 @@ export interface AuthValue {
   signOut: () => Promise<void>
   /** Record a session the server already created (e.g. after a password reset). */
   sessionStarted: (user: User) => void
+  /** Delete the account (password re-check on the server); ends the session. */
+  deleteAccount: (password: string) => Promise<void>
 }
 
 export const AuthContext = createContext<AuthValue | null>(null)

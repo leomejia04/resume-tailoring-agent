@@ -224,6 +224,10 @@ export const signUp = (email: string, password: string) =>
 
 export const signOut = () => apiRequest<void>('/auth/logout', { method: 'POST' })
 
+/** Irreversible: removes the account, its files, and all of its data. */
+export const deleteAccount = (password: string) =>
+  apiRequest<void>('/account/deletion', { method: 'POST', body: { password, confirmation: 'DELETE' } })
+
 export const requestPasswordReset = (email: string) =>
   apiRequest<{ status: 'accepted'; message: string }>('/auth/password-reset', { method: 'POST', body: { email } })
 

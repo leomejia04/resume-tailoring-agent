@@ -61,6 +61,9 @@ class Settings(BaseSettings):
     supabase_url: str = "http://127.0.0.1:54321"
     # Supabase "anon"/publishable key: identifies the project; grants nothing by itself.
     supabase_anon_key: SecretStr | None = None
+    # Local containers only: the issuer in tokens when this process reaches
+    # Supabase under another name (host.docker.internal). Refused in production.
+    supabase_jwt_issuer: str | None = None
     storage_bucket: str = "masters"
     artifacts_bucket: str = "artifacts"
     # Runtime connection as the least-privilege app_backend role (never the service role).
@@ -179,6 +182,8 @@ class Settings(BaseSettings):
                 raise ValueError("production requires Secure cookies")
             if not _is_public_https(self.supabase_url):
                 raise ValueError("production SUPABASE_URL must be HTTPS")
+            if self.supabase_jwt_issuer is not None:
+                raise ValueError("SUPABASE_JWT_ISSUER is for local containers, not production")
             if self.llm_provider == "demo":
                 raise ValueError("the demo AI provider is not allowed in production")
             if self.job_runner != "worker":
@@ -216,8 +221,12 @@ class Settings(BaseSettings):
         return frozenset(base + self.cors_allowed_origins)
 
     @property
-    def jwt_issuer(self) -> str:
+    def auth_url(self) -> str:
         return f"{self.supabase_url}/auth/v1"
+
+    @property
+    def jwt_issuer(self) -> str:
+        return self.supabase_jwt_issuer or self.auth_url
 
 
 @lru_cache

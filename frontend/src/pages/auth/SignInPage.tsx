@@ -47,6 +47,9 @@ export function SignInPage() {
   return (
     <div className="space-y-5">
       <h1 className="text-2xl font-semibold text-slate-900">Sign in</h1>
+      {params.get('deleted') === '1' && !formError && (
+        <Alert tone="success">Your account and all of its data were deleted.</Alert>
+      )}
       {formError && (
         <Alert ref={alertRef} tone="error" requestId={formError.requestId}>
           {formError.message}

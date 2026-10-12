@@ -12,6 +12,7 @@ export function RequireAuth() {
     )
   }
   if (state.status === 'signed_out') {
+    if (state.reason === 'account_deleted') return <Navigate to="/sign-in?deleted=1" replace />
     const next = encodeURIComponent(location.pathname + location.search)
     return <Navigate to={`/sign-in?next=${next}`} replace />
   }

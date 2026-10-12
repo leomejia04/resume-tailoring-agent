@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import ApiError
 from app.config import Settings
-from app.db.models import Job, JobGrant
+from app.db.models import AccountDeletion, Job, JobGrant
 from app.db.session import system_session, user_session
 
 logger = logging.getLogger("app.jobs")
@@ -59,6 +59,13 @@ class Claimed:
     attempt: int
 
 
+def lock_owner_jobs(db: Session, owner_id: uuid.UUID) -> None:
+    """Serialize this owner's enqueues (and account deletion) until the transaction ends."""
+    db.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"jobs:{owner_id}"}
+    )
+
+
 def enqueue(
     db: Session,
     settings: Settings,
@@ -70,10 +77,9 @@ def enqueue(
     job_id: uuid.UUID | None = None,
 ) -> Job:
     """Queue a job in the caller's transaction; refuse duplicates and per-user overload."""
-    # Serialize this owner's enqueues so the active-job count below cannot race.
-    db.execute(
-        text("SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))"), {"key": f"jobs:{owner_id}"}
-    )
+    lock_owner_jobs(db, owner_id)
+    if db.scalar(select(func.count()).where(AccountDeletion.owner_id == owner_id)):
+        raise ApiError(409, "account_deleting", "This account is being deleted.")
     active = db.scalar(select(func.count()).where(Job.owner_id == owner_id, Job.status.in_(ACTIVE)))
     if (active or 0) >= settings.max_active_jobs_per_user:
         raise ApiError(

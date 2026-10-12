@@ -19,6 +19,8 @@ import httpx
 from app.config import Settings
 
 _TIMEOUT = httpx.Timeout(30.0, connect=5.0)
+# Storage's list and bulk-delete calls accept up to 1000 entries.
+_LIST_PAGE = 1000
 
 
 class StorageUnavailableError(RuntimeError):
@@ -81,6 +83,56 @@ class UserStorage:
             raise StorageUnavailableError(f"storage error {response.status_code}")
         if response.status_code in (400, 404):
             raise StorageObjectMissingError("cannot sign that object")
+        if response.status_code >= 400:
+            raise StorageRejectedError(response.status_code)
+        return response.json()
+
+    def list_tree(self, folder: str, *, max_depth: int = 4, max_objects: int = 20_000) -> list[str]:
+        """Every object path under ``folder`` (recursively, bounded)."""
+        found: list[str] = []
+        pending = [(folder.strip("/"), 0)]
+        while pending:
+            prefix, depth = pending.pop()
+            offset = 0
+            while True:
+                entries = self._send(
+                    "POST",
+                    f"{self._base}/list/{self._bucket}",
+                    {"prefix": f"{prefix}/", "limit": _LIST_PAGE, "offset": offset},
+                )
+                if not isinstance(entries, list):
+                    raise StorageUnavailableError("unexpected list response")
+                for entry in entries:
+                    name = entry.get("name") if isinstance(entry, dict) else None
+                    if not isinstance(name, str) or not name or "/" in name:
+                        raise StorageUnavailableError("unexpected list entry")
+                    if entry.get("id") is None:  # a folder
+                        if depth + 1 >= max_depth:
+                            raise StorageUnavailableError("folders nested too deeply")
+                        pending.append((f"{prefix}/{name}", depth + 1))
+                    else:
+                        found.append(f"{prefix}/{name}")
+                if len(found) > max_objects:
+                    raise StorageUnavailableError("too many objects")
+                if len(entries) < _LIST_PAGE:
+                    break
+                offset += _LIST_PAGE
+        return found
+
+    def delete(self, paths: list[str]) -> None:
+        """Delete objects (allowed by policy only while account deletion is requested)."""
+        for start in range(0, len(paths), _LIST_PAGE):
+            batch = paths[start : start + _LIST_PAGE]
+            self._send("DELETE", f"{self._base}/{self._bucket}", {"prefixes": batch})
+
+    def _send(self, method: str, url: str, payload: dict) -> object:
+        try:
+            with httpx.Client(timeout=_TIMEOUT) as client:
+                response = client.request(method, url, json=payload, headers=self._headers)
+        except httpx.HTTPError as exc:
+            raise StorageUnavailableError("storage unreachable") from exc
+        if response.status_code >= 500:
+            raise StorageUnavailableError(f"storage error {response.status_code}")
         if response.status_code >= 400:
             raise StorageRejectedError(response.status_code)
         return response.json()

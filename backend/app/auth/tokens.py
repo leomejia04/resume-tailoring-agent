@@ -32,10 +32,18 @@ class VerifiedUser:
 
 
 class TokenVerifier:
-    def __init__(self, issuer: str, jwk_client: jwt.PyJWKClient | None = None) -> None:
+    def __init__(
+        self,
+        issuer: str,
+        jwk_client: jwt.PyJWKClient | None = None,
+        *,
+        auth_url: str | None = None,
+    ) -> None:
+        # auth_url: where this process reaches the auth server, when that differs
+        # from the issuer named in tokens (local containers only).
         self.issuer = issuer
         self._jwks = jwk_client or jwt.PyJWKClient(
-            f"{issuer}/.well-known/jwks.json", cache_keys=True, lifespan=600, timeout=5
+            f"{auth_url or issuer}/.well-known/jwks.json", cache_keys=True, lifespan=600, timeout=5
         )
 
     def verify(self, token: str) -> VerifiedUser:
@@ -70,5 +78,5 @@ class TokenVerifier:
 
 
 @lru_cache(maxsize=4)
-def verifier_for(issuer: str) -> TokenVerifier:
-    return TokenVerifier(issuer)
+def verifier_for(issuer: str, auth_url: str | None = None) -> TokenVerifier:
+    return TokenVerifier(issuer, auth_url=auth_url)

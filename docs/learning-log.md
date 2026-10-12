@@ -319,3 +319,30 @@ Short notes on concepts introduced while building, in plain language.
 - **Blind A/B review.** Showing two drafts as A and B in random order, with
   the key in a separate file, keeps the reviewer from favoring the method
   they expect to win.
+
+## Milestone 8: hosted beta (preparation only; hosting cancelled 2026-10-12)
+
+- **One origin.** When the API serves the built frontend, the browser sees
+  pages and `/api` as the same site, so `SameSite=Strict` cookies and the
+  CSRF Origin check work exactly as in development and CORS can stay off.
+- **Liveness vs readiness.** Liveness asks "is the process answering?";
+  readiness asks "can it do useful work right now?" (database reachable,
+  schema current). A host restarts on failed liveness and stops routing
+  traffic on failed readiness.
+- **Images are built from an allow-list.** `.dockerignore` starting with `*`
+  and then naming the few folders an image needs means a new secret file in
+  the repository can never be copied into an image by accident.
+- **A lockfile is per platform.** The same `torch==2.14.0` means a CPU build
+  on Windows and a CUDA build with gigabytes of GPU libraries on Linux. The
+  Linux lock reuses every other pin and takes torch from PyTorch's CPU
+  index; hashes make the install refuse any file that differs.
+- **Hosts restart processes, not threads.** A worker with no web port gets
+  no health probe on most hosts, so the worker exits with an error when a
+  job thread dies and lets the host's restart policy bring it back.
+- **Deleting an account without a master key.** The backend never holds
+  Supabase's service-role key. Instead the user re-enters their password,
+  the app removes their files with their own session (allowed only once a
+  deletion is recorded), and one tiny database function deletes exactly the
+  signed-in user; foreign-key cascades remove everything they owned.
+- **Pin CI actions by commit.** A tag like `v7` can be moved to different
+  code; a full commit SHA cannot.

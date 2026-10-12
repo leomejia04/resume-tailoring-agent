@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from app import __version__
 from app.api.v1 import (
+    account_routes,
     auth_routes,
     evidence_routes,
     masters_routes,
@@ -112,6 +113,7 @@ def preview_job_input(
 
 
 router.include_router(auth_routes.router)
+router.include_router(account_routes.router)
 router.include_router(profile_routes.router)
 router.include_router(masters_routes.router)
 router.include_router(evidence_routes.router)

@@ -952,3 +952,22 @@ class Retrieval(Base):
     runtime_ms: Mapped[int] = mapped_column(Integer, nullable=False)
     result: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = _created_at()
+
+
+# --- Milestone 8: account deletion (ADR 0012) --------------------------------------
+
+
+class AccountDeletion(Base):
+    """Marks an account whose deletion has started (confirmed by the user's password).
+
+    While it exists, new jobs are refused and Storage lets the owner delete
+    their own objects; ``app.delete_current_account()`` then removes the auth
+    user, and every row (this one too) goes with it through the cascades.
+    """
+
+    __tablename__ = "account_deletions"
+
+    owner_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), _auth_user_fk(), primary_key=True
+    )
+    requested_at: Mapped[datetime] = _created_at()

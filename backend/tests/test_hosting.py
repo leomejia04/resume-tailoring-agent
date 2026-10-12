@@ -118,6 +118,18 @@ def test_production_refuses_placeholder_secrets(field, value):
         make_settings(**{**PRODUCTION, field: value})
 
 
+def test_issuer_override_is_local_only():
+    settings = make_settings(
+        supabase_url="http://host.docker.internal:54321",
+        supabase_jwt_issuer="http://127.0.0.1:54321/auth/v1",
+    )
+    assert settings.jwt_issuer == "http://127.0.0.1:54321/auth/v1"
+    assert settings.auth_url == "http://host.docker.internal:54321/auth/v1"
+    assert make_settings().jwt_issuer == make_settings().auth_url
+    with pytest.raises(ValidationError, match="SUPABASE_JWT_ISSUER"):
+        make_settings(**PRODUCTION, supabase_jwt_issuer="https://other.example/auth/v1")
+
+
 def test_placeholders_are_fine_outside_production():
     make_settings(supabase_anon_key="replace-with-publishable-key")
 
@@ -168,9 +180,9 @@ def test_ready_against_the_local_stack(fresh_readiness):
 
 def test_migration_state():
     head, known = health._revisions()
-    assert head == "0010" and "0001" in known
+    assert head == "0011" and "0001" in known
     assert health.migration_state(head) == "ok"
-    assert health.migration_state("0009") == "behind"
+    assert health.migration_state("0010") == "behind"
     assert health.migration_state(None) == "behind"
     # A newer release migrated first; this (older) image keeps serving.
     assert health.migration_state("0099") == "ok"
@@ -202,6 +214,27 @@ def test_heartbeat_check_handles_garbage_and_unset(tmp_path):
     path.write_text("not a number", encoding="utf-8")
     assert not worker.check_heartbeat(make_settings(worker_heartbeat_file=path))
     assert not worker.check_heartbeat(make_settings())
+
+
+def test_worker_stops_unhealthy_when_a_job_thread_dies(monkeypatch):
+    def run_once(settings, worker_id):
+        raise KeyboardInterrupt  # not an Exception: escapes the loop and ends the thread
+
+    monkeypatch.setattr(worker, "run_once", run_once)
+    monkeypatch.setattr(worker, "maintain", lambda settings: (0, 0))
+    monkeypatch.setattr(threading, "excepthook", lambda args: None)
+    monkeypatch.setattr(worker, "MAINTENANCE_SECONDS", 0.05)
+    stop = threading.Event()
+    assert worker.serve(make_settings(worker_concurrency=1), stop) is False
+    assert stop.is_set()
+
+
+def test_worker_stops_healthy_on_request(monkeypatch):
+    monkeypatch.setattr(worker, "run_once", lambda settings, worker_id: False)
+    monkeypatch.setattr(worker, "maintain", lambda settings: (0, 0))
+    stop = threading.Event()
+    threading.Timer(0.2, stop.set).start()
+    assert worker.serve(make_settings(worker_concurrency=1, worker_poll_seconds=0.1), stop)
 
 
 def test_worker_check_flag_exit_codes(tmp_path, monkeypatch):

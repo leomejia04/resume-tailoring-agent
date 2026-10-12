@@ -63,3 +63,12 @@ class CsrfOut(BaseModel):
 class AcceptedOut(BaseModel):
     status: Literal["accepted"] = "accepted"
     message: str
+
+
+class AccountDeletionRequest(BaseModel):
+    """Deleting an account needs the current password and a typed confirmation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    password: str = Field(min_length=1, max_length=PASSWORD_MAX)
+    confirmation: Literal["DELETE"]
